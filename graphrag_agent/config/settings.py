@@ -60,31 +60,29 @@ FILE_REGISTRY_PATH = PROJECT_ROOT / "file_registry.json"  # 文件注册表路�
 
 # ===== 知识库与系统参数 =====
 
-KB_NAME = "华东理工大学"  # 知识库主题，用于deepsearch
+KB_NAME = "燃机测点KKS码"  # 知识库主题，用于deepsearch
 workers = _get_env_int("FASTAPI_WORKERS", 2) or 2  # FastAPI 并发进程数
 
 # ===== 知识图谱配置 =====
 
-theme = "华东理工大学学生管理"  # 知识图谱主题
+theme = "燃机测点KKS码知识管理"  # 知识图谱主题
 
 entity_types = [
-    "学生类型",
-    "奖学金类型",
-    "处分类型",
-    "部门",
-    "学生职责",
-    "管理规定",
+    "机组代码",
+    "系统主组",
+    "系统子类",
+    "系统代码",
+    "设备主组",
+    "设备代码",
+    "部件主组",
+    "部件代码",
 ]  # 知识图谱实体类型
 
 relationship_types = [
-    "申请",
-    "评选",
-    "违纪",
-    "资助",
-    "申诉",
-    "管理",
-    "权利义务",
-    "互斥",
+    "位于",
+    "包含子类",
+    "描述是",
+    "功能为",
 ]  # 知识图谱关系类型
 
 # 冲突解决策略：manual_first / auto_first / merge

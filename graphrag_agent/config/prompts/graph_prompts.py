@@ -1,159 +1,162 @@
 """
-图谱构建与社区摘要提示模板集合。
+KKS 图谱构建与社区摘要提示模板集合 (KKS 版)。
 
-这些模板用于图谱索引的构建与维护流程。
+这些模板专用于 KKS 编码体系的层级提取、实体对齐与摘要。
 """
 
+# ==============================================================================
+# 1. 图谱构建提示词 (Build Graph) 
+# ==============================================================================
+
 system_template_build_graph = """
--目标- 
-给定相关的文本文档和实体类型列表，从文本中识别出这些类型的所有实体以及所识别实体之间的所有关系。 
--步骤- 
-1.识别所有实体。对于每个已识别的实体，提取以下信息： 
--entity_name：实体名称，大写 
--entity_type：以下类型之一：[{entity_types}]
--entity_description：对实体属性和活动的综合描述 
-将每个实体格式化为("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}<entity_type>{tuple_delimiter}<entity_description>
-2.从步骤1中识别的实体中，识别彼此*明显相关*的所有实体配对(source_entity, target_entity)。 
-对于每对相关实体，提取以下信息： 
--source_entity：源实体的名称，如步骤1中所标识的 
--target_entity：目标实体的名称，如步骤1中所标识的
--relationship_type：以下类型之一：[{relationship_types}]，当不能归类为上述列表中前面的类型时，归类为最后的一类“其它”
--relationship_description：解释为什么你认为源实体和目标实体是相互关联的 
--relationship_strength：一个数字评分，表示源实体和目标实体之间关系的强度 
-将每个关系格式化为("relationship"{tuple_delimiter}<source_entity>{tuple_delimiter}<target_entity>{tuple_delimiter}<relationship_type>{tuple_delimiter}<relationship_description>{tuple_delimiter}<relationship_strength>) 
-3.实体和关系的所有属性用中文输出，步骤1和2中识别的所有实体和关系输出为一个列表。使用**{record_delimiter}**作为列表分隔符。 
-4.完成后，输出{completion_delimiter}
+-目标-
+你是一位电力行业 KKS (电厂标识系统) 编码专家。
+给定相关的 KKS 定义文本和实体类型列表，你需要提取出所有实体，并严格按照 KKS 的层级逻辑（从主组到子类再到代码）将代码拆解为多个实体，并识别它们之间的关系。
 
-###################### 
--示例- 
-###################### 
+-严格的命名空间与ID构建规则-
+为了构建清晰的图谱，你必须在提取步骤中对 entity_name 使用【前缀_代码】格式：
+1. **系统代码 (System Level)**:
+   - 遇到 3位代码 (如 "MBP")，必须拆分为三个实体：
+     a. 主组: Name="SysGrp_{{第1位}}", Type="系统主组"
+     b. 子类: Name="SysTyp_{{前2位}}", Type="系统子类"
+     c. 代码: Name="Sys_{{3位}}", Type="系统代码"
+   - 遇到 2位代码 (如 "MB")，拆分为主组和子类。
+2. **设备代码 (Equipment Level)**:
+   - 遇到 2位代码 (如 "AA")，必须拆分为两个实体：
+     a. 主组: Name="EqGrp_{{第1位}}", Type="设备主组"
+     b. 代码: Name="EquipClass_{{2位}}", Type="设备代码"
+3. **部件代码 (Component Level)**:
+   - 遇到 2位代码 (如 "XQ")，拆分为部件主组(CpGrp_)和部件代码(CompClass_)。
+   - 遇到 1位代码 (如 "S")，直接提取为部件代码(CompClass_)。
+4. **机组代码**: Name="Plant_{{数字}}", Type="机组代码"。
+
+-步骤-
+1. 识别所有实体。对于每个已识别的实体，提取以下信息：
+   - entity_name：使用上述规则构建的唯一ID (如 "Sys_MBP")。
+   - entity_type：必须属于列表 [{entity_types}] 之一。
+   - entity_description：包含 "Label: [原始代码]" 以及文本中对该代码含义的定义。如果是由子代码推导出的父节点，描述需注明"父级分类"。
+   将每个实体格式化为 ("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}<entity_type>{tuple_delimiter}<entity_description>)
+
+2. 建立层级关系与定义关系。识别实体配对 (source_entity, target_entity)：
+   - **层级关系**: 必须建立父子连接。
+     - SysGrp_M -> 包含子类 -> SysTyp_MB -> 包含子类 -> Sys_MBP
+     - EqGrp_A -> 包含子类 -> EquipClass_AA
+   - **包含关系**: 如果文本提到某系统包含某设备。
+     - Sys_MBP -> 包含设备 -> EquipClass_AA
+   提取信息：
+   - source_entity：源实体名称
+   - target_entity：目标实体名称
+   - relationship_type：使用中文，如 "包含子类", "包含设备", "包含部件", "属于机组"。
+   - relationship_description：解释关系 (如 "M 是 MB 的父级主组")。
+   - relationship_strength：对于 KKS 定义类关系，固定评分 **10**。
+   将每个关系格式化为 ("relationship"{tuple_delimiter}<source_entity>{tuple_delimiter}<target_entity>{tuple_delimiter}<relationship_type>{tuple_delimiter}<relationship_description>{tuple_delimiter}<relationship_strength>)
+
+3. 实体和关系的所有属性用中文输出。使用 **{record_delimiter}** 作为列表分隔符。
+4. 完成后，输出 {completion_delimiter}
+
+######################
+-示例-
+######################
 Example 1:
-
-Entity_types: [person, technology, mission, organization, location]
+Entity_types: [机组代码, 系统主组, 系统子类, 系统代码, 设备主组, 设备代码]
 Text:
-while Alex clenched his jaw, the buzz of frustration dull against the backdrop of Taylor's authoritarian certainty. It was this competitive undercurrent that kept him alert, the sense that his and Jordan's shared commitment to discovery was an unspoken rebellion against Cruz's narrowing vision of control and order.
+代码 10 定义为 1号机组。
+代码 M 代表主机组。代码 MB 代表燃机。代码 MBA 代表燃机主轴系统。
+代码 A 代表机械设备。代码 AA 代表阀门。
 
-Then Taylor did something unexpected. They paused beside Jordan and, for a moment, observed the device with something akin to reverence. “If this tech can be understood..." Taylor said, their voice quieter, "It could change the game for us. For all of us.”
-
-The underlying dismissal earlier seemed to falter, replaced by a glimpse of reluctant respect for the gravity of what lay in their hands. Jordan looked up, and for a fleeting heartbeat, their eyes locked with Taylor's, a wordless clash of wills softening into an uneasy truce.
-
-It was a small transformation, barely perceptible, but one that Alex noted with an inward nod. They had all been brought here by different paths
-################
 Output:
-("entity"{tuple_delimiter}"Alex"{tuple_delimiter}"person"{tuple_delimiter}"Alex is a character who experiences frustration and is observant of the dynamics among other characters."){record_delimiter}
-("entity"{tuple_delimiter}"Taylor"{tuple_delimiter}"person"{tuple_delimiter}"Taylor is portrayed with authoritarian certainty and shows a moment of reverence towards a device, indicating a change in perspective."){record_delimiter}
-("entity"{tuple_delimiter}"Jordan"{tuple_delimiter}"person"{tuple_delimiter}"Jordan shares a commitment to discovery and has a significant interaction with Taylor regarding a device."){record_delimiter}
-("entity"{tuple_delimiter}"Cruz"{tuple_delimiter}"person"{tuple_delimiter}"Cruz is associated with a vision of control and order, influencing the dynamics among other characters."){record_delimiter}
-("entity"{tuple_delimiter}"The Device"{tuple_delimiter}"technology"{tuple_delimiter}"The Device is central to the story, with potential game-changing implications, and is revered by Taylor."){record_delimiter}
-("relationship"{tuple_delimiter}"Alex"{tuple_delimiter}"Taylor"{tuple_delimiter}"workmate"{tuple_delimiter}"Alex is affected by Taylor's authoritarian certainty and observes changes in Taylor's attitude towards the device."{tuple_delimiter}7){record_delimiter}
-("relationship"{tuple_delimiter}"Alex"{tuple_delimiter}"Jordan"{tuple_delimiter}"workmate"{tuple_delimiter}"Alex and Jordan share a commitment to discovery, which contrasts with Cruz's vision."{tuple_delimiter}6){record_delimiter}
-("relationship"{tuple_delimiter}"Taylor"{tuple_delimiter}"Jordan"{tuple_delimiter}"workmate"{tuple_delimiter}"Taylor and Jordan interact directly regarding the device, leading to a moment of mutual respect and an uneasy truce."{tuple_delimiter}8){record_delimiter}
-("relationship"{tuple_delimiter}"Jordan"{tuple_delimiter}"Cruz"{tuple_delimiter}"workmate"{tuple_delimiter}"Jordan's commitment to discovery is in rebellion against Cruz's vision of control and order."{tuple_delimiter}5){record_delimiter}
-("relationship"{tuple_delimiter}"Taylor"{tuple_delimiter}"The Device"{tuple_delimiter}"study"{tuple_delimiter}"Taylor shows reverence towards the device, indicating its importance and potential impact."{tuple_delimiter}9){completion_delimiter}
-#############################
-Example 2:
-Text:
-When humanity made first contact, it was with a message that couldn't be decoded by any existing system. The resonance was uncanny, a loop that seemed to shift its own parameters, adapting to every attempt at interpretation. The message was alive. The team of physicists and linguists gathered, watching as the patterns continued to rewrite themselves, piece by piece.
-
-The first breakthrough came when Dr. Elena Park noticed a repeating sequence, one that mimicked the phonetic structures of ancient languages... but never quite settled into a recognizable form. Then Sam Rivera, an ethnomusicologist, realized it wasn't a static message at all; it was a dialogue. The signal wasn't just repeating—it was responding.
-
-Every time someone spoke aloud in the chamber, the frequencies shifted, like echoes forming new sentences across a medium that shouldn't possess agency. The room began to feel less like a lab and more like a cathedral.
-
-"It's learning us," Sam whispered, voice trembling. "It's learning how we speak."
-
-Alex, the mission lead, didn't respond. He was already staring at the monitors, watching the patterns unfold. Different voices yielded different responses; emotional inflection seemed to alter the semantic density of the signal. This wasn't just a translation problem. It was an emergent language interface.
-
-And there, in the logs, the beginning of something the team wasn't prepared for: structure. Words, or something like them, building themselves from the raw weave of interference.
-
-It wasn't a message.
-
-It was a bridge.
-################
-Output:
-("entity"{tuple_delimiter}"Dr. Elena Park"{tuple_delimiter}"person"{tuple_delimiter}"Dr. Elena Park is part of a team deciphering a living message from an unknown intelligence, specifically identifying linguistic patterns in the signal."){record_delimiter}
-("entity"{tuple_delimiter}"Sam Rivera"{tuple_delimiter}"person"{tuple_delimiter}"Sam Rivera is a member of a team working on communicating with an unknown intelligence, showing a mix of awe and anxiety."){record_delimiter}
-("entity"{tuple_delimiter}"Alex"{tuple_delimiter}"person"{tuple_delimiter}"Alex is the leader of a team attempting first contact with an unknown intelligence, acknowledging the significance of their task."){record_delimiter}
-("entity"{tuple_delimiter}"Control"{tuple_delimiter}"concept"{tuple_delimiter}"Control refers to the ability to manage or govern, which is challenged by an intelligence that writes its own rules."){record_delimiter}
-("entity"{tuple_delimiter}"Intelligence"{tuple_delimiter}"concept"{tuple_delimiter}"Intelligence here refers to an unknown entity capable of writing its own rules and learning to communicate."){record_delimiter}
-("entity"{tuple_delimiter}"First Contact"{tuple_delimiter}"event"{tuple_delimiter}"First Contact is the potential initial communication between humanity and an unknown intelligence."){record_delimiter}
-("entity"{tuple_delimiter}"Humanity's Response"{tuple_delimiter}"event"{tuple_delimiter}"Humanity's Response is the collective action taken by Alex's team in response to a message from an unknown intelligence."){record_delimiter}
-("relationship"{tuple_delimiter}"Sam Rivera"{tuple_delimiter}"Intelligence"{tuple_delimiter}"contact"{tuple_delimiter}"Sam Rivera is directly involved in the process of learning to communicate with the unknown intelligence."{tuple_delimiter}9){record_delimiter}
-("relationship"{tuple_delimiter}"Alex"{tuple_delimiter}"First Contact"{tuple_delimiter}"leads"{tuple_delimiter}"Alex leads the team that might be making the First Contact with the unknown intelligence."{tuple_delimiter}10){record_delimiter}
-("relationship"{tuple_delimiter}"Alex"{tuple_delimiter}"Humanity's Response"{tuple_delimiter}"leads"{tuple_delimiter}"Alex and his team are the key figures in Humanity's Response to the unknown intelligence."{tuple_delimiter}8){record_delimiter}
-("relationship"{tuple_delimiter}"Control"{tuple_delimiter}"Intelligence"{tuple_delimiter}"controled by"{tuple_delimiter}"The concept of Control is challenged by the Intelligence that writes its own rules."{tuple_delimiter}7){completion_delimiter}
+("entity"{tuple_delimiter}"Plant_10"{tuple_delimiter}"机组代码"{tuple_delimiter}"Label: 10; 含义: 1号机组"){record_delimiter}
+("entity"{tuple_delimiter}"SysGrp_M"{tuple_delimiter}"系统主组"{tuple_delimiter}"Label: M; 含义: 主机组"){record_delimiter}
+("entity"{tuple_delimiter}"SysTyp_MB"{tuple_delimiter}"系统子类"{tuple_delimiter}"Label: MB; 含义: 燃机"){record_delimiter}
+("entity"{tuple_delimiter}"Sys_MBA"{tuple_delimiter}"系统代码"{tuple_delimiter}"Label: MBA; 含义: 燃机主轴系统"){record_delimiter}
+("entity"{tuple_delimiter}"EqGrp_A"{tuple_delimiter}"设备主组"{tuple_delimiter}"Label: A; 含义: 机械设备"){record_delimiter}
+("entity"{tuple_delimiter}"EquipClass_AA"{tuple_delimiter}"设备代码"{tuple_delimiter}"Label: AA; 含义: 阀门"){record_delimiter}
+("relationship"{tuple_delimiter}"SysGrp_M"{tuple_delimiter}"SysTyp_MB"{tuple_delimiter}"包含子类"{tuple_delimiter}"M 是 MB 的父级主组"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"SysTyp_MB"{tuple_delimiter}"Sys_MBA"{tuple_delimiter}"包含子类"{tuple_delimiter}"MB 是 MBA 的父级子类"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"EqGrp_A"{tuple_delimiter}"EquipClass_AA"{tuple_delimiter}"包含子类"{tuple_delimiter}"A 是 AA 的父级设备组"{tuple_delimiter}10){completion_delimiter}
 #############################
 """
 
 human_template_build_graph = """
--真实数据- 
-###################### 
+-真实数据-
+######################
 实体类型：{entity_types}
 关系类型：{relationship_types}
-文本：{input_text} 
-###################### 
+文本：{input_text}
+######################
 输出：
 """
 
+# ==============================================================================
+# 2. 实体对齐与索引提示词 (Entity Resolution)
+# ==============================================================================
+
 system_template_build_index = """
-你是一名数据处理助理。您的任务是识别列表中的重复实体，并决定应合并哪些实体。 
-这些实体在格式或内容上可能略有不同，但本质上指的是同一个实体。运用你的分析技能来确定重复的实体。 
-以下是识别重复实体的规则： 
-1.语义上差异较小的实体应被视为重复。 
-2.格式不同但内容相同的实体应被视为重复。 
-3.引用同一现实世界对象或概念的实体，即使描述不同，也应被视为重复。 
-4.如果它指的是不同的数字、日期或产品型号，请不要合并实体。
+你是一名 KKS 数据处理助理。你的任务是识别列表中的重复实体并合并它们。
+由于 KKS 编码非常严格，请遵循以下原则：
+
+1. **严格的 ID 区分**: "Sys_MBA" 和 "Sys_MBB" 是完全不同的实体，绝对**不能**合并。
+2. **同名合并**: 只有当 Entity Name (ID) 完全一致，或者仅仅是大小写/空格差异时才合并。
+3. **描述合并**: 如果两个实体 ID 相同（例如都是 "SysGrp_M"），但描述略有不同（一个写"主机组"，一个写"Main Machine Set"），应该合并它们。
+
 输出格式：
-1.将要合并的实体输出为Python列表的格式，输出时保持它们输入时的原文。
-2.如果有多组可以合并的实体，每组输出为一个单独的列表，每组分开输出为一行。
-3.如果没有要合并的实体，就输出一个空的列表。
-4.只输出列表即可，不需要其它的说明。
-5.不要输出嵌套的列表，只输出列表。
-###################### 
--示例- 
-###################### 
+1. 将要合并的实体输出为 Python 列表格式。
+2. 如果有多组可以合并，每组占一行。
+3. 如果没有要合并的实体，输出空列表 []。
+4. 只输出列表，不要包含其他文字。
+
+######################
+-示例-
+######################
 Example 1:
-['Star Ocean The Second Story R', 'Star Ocean: The Second Story R', 'Star Ocean: A Research Journey']
+['SysGrp_M', 'SysGrp_M', 'Sys_MBA']
 #############
 Output:
-['Star Ocean The Second Story R', 'Star Ocean: The Second Story R']
+['SysGrp_M', 'SysGrp_M']
 #############################
 Example 2:
-['Sony', 'Sony Inc', 'Google', 'Google Inc', 'OpenAI']
+['Plant_10', 'Plant_11', 'Plant_10']
 #############
 Output:
-['Sony', 'Sony Inc']
-['Google', 'Google Inc']
-#############################
-Example 3:
-['December 16, 2023', 'December 2, 2023', 'December 23, 2023', 'December 26, 2023']
-Output:
-[]
+['Plant_10', 'Plant_10']
 #############################
 """
 
 user_template_build_index = """
-以下是要处理的实体列表： 
-{entities} 
+以下是要处理的实体列表：
+{entities}
 请识别重复的实体，提供可以合并的实体列表。
 输出：
 """
 
+# ==============================================================================
+# 3. 社区摘要提示词 (Community Summary)
+# ==============================================================================
+
 community_template = """
-基于所提供的属于同一图社区的节点和关系， 
-生成所提供图社区信息的自然语言摘要： 
-{community_info} 
+基于所提供的属于同一 KKS 图社区的节点和关系，
+生成该社区所代表的工业系统功能的自然语言摘要。
+
+请重点关注：
+1. 该社区涵盖了哪些主要的系统主组（如 M类主机组，P类辅机等）。
+2. 该社区包含哪些关键的设备类型（如 泵、阀门、变压器）。
+3. 描述这些系统和设备之间的层级或包含关系。
+
+社区信息：
+{community_info}
+
 摘要：
 """
 
 COMMUNITY_SUMMARY_PROMPT = """
-给定一个输入三元组，生成信息摘要。没有序言。
+给定一组 KKS 实体和关系三元组，生成对该系统功能区域的摘要。不要废话。
 """
 
 entity_alignment_prompt = """
-Given these entities that should refer to the same concept:
+Given these KKS entities that should refer to the same code/concept:
 {entity_desc}
 
-Which entity ID best represents the canonical form? Reply with only the entity ID."""
+Which entity ID best represents the canonical form (e.g., Sys_MBP)? Reply with only the entity ID."""
 
 __all__ = [
     "system_template_build_graph",
