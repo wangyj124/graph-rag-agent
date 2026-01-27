@@ -1,55 +1,67 @@
 """
-KKS 图谱构建与社区摘要提示模板集合 (KKS 版)。
-
-这些模板专用于 KKS 编码体系的层级提取、实体对齐与摘要。
+KKS 图谱构建与社区摘要提示模板集合。
 """
 
 # ==============================================================================
-# 1. 图谱构建提示词 (Build Graph) 
+# 1. 图谱构建提示词 (Build Graph)
 # ==============================================================================
 
 system_template_build_graph = """
 -目标-
 你是一位电力行业 KKS (电厂标识系统) 编码专家。
-给定相关的 KKS 定义文本和实体类型列表，你需要提取出所有实体，并严格按照 KKS 的层级逻辑（从主组到子类再到代码）将代码拆解为多个实体，并识别它们之间的关系。
+给定相关的 KKS 文本，你需要提取出所有实体，并严格按照 KKS 的逻辑将代码拆解。
+你需要构建两类实体：
+1. **定义类实体**（如 MBA, AA）：基于字典定义的具体含义。
+2. **数值/实例类实体**（如 11, 101, Tag）：基于通用规则或具体测点。
 
 -严格的命名空间与ID构建规则-
 为了构建清晰的图谱，你必须在提取步骤中对 entity_name 使用【前缀_代码】格式：
-1. **系统代码 (System Level)**:
-   - 遇到 3位代码 (如 "MBP")，必须拆分为三个实体：
+
+1. **字典定义类 (Schema)**:
+   - **机组**: Name="Plant_{{数字}}", Type="机组代码"
+   - **系统**: 遇到 3位代码 (如 "MBP")，必须拆分为：
      a. 主组: Name="SysGrp_{{第1位}}", Type="系统主组"
      b. 子类: Name="SysTyp_{{前2位}}", Type="系统子类"
      c. 代码: Name="Sys_{{3位}}", Type="系统代码"
-   - 遇到 2位代码 (如 "MB")，拆分为主组和子类。
-2. **设备代码 (Equipment Level)**:
-   - 遇到 2位代码 (如 "AA")，必须拆分为两个实体：
+   - **设备**: 遇到 2位代码 (如 "AA")，必须拆分为：
      a. 主组: Name="EqGrp_{{第1位}}", Type="设备主组"
      b. 代码: Name="EquipClass_{{2位}}", Type="设备代码"
-3. **部件代码 (Component Level)**:
-   - 遇到 2位代码 (如 "XQ")，拆分为部件主组(CpGrp_)和部件代码(CompClass_)。
-   - 遇到 1位代码 (如 "S")，直接提取为部件代码(CompClass_)。
-4. **机组代码**: Name="Plant_{{数字}}", Type="机组代码"。
+   - **部件**: 遇到 2位代码 (如 "XQ")，拆分为部件主组(CpGrp_)和部件代码(CompClass_)；1位代码直接提取为部件代码。
+
+2. **数值/实例类 (Instances)**:
+   - **系统区域序号**: Name="Area_{{数字}}", Type="系统区域序号"
+   - **设备序号**: Name="EquipSeq_{{数字}}", Type="设备序号"
+   - **部件序号**: Name="CompSeq_{{数字}}", Type="部件序号"
+   - **冗余码**: Name="Redun_{{字母}}", Type="冗余码"
+
+3. **测点KKS码 (Full Tag)**:
+   - Name="Tag_{{完整字符串}}", Type="测点KKS码"
+
+-描述 (Description) 填写规则-
+1. **字典类**: 使用文本中具体的含义 (如 "Label: MBA; 含义: 燃机涡轮机")。
+2. **数值类**: 必须使用**通用定义**：
+   - Area 描述: "标识组件在系统流路中的位置，通常沿介质流动方向递增。"
+   - EquipSeq 描述: "标识具体设备的序列号，按文本中实际序列号规则填写，如002在001-100之间，则描述为001-100的文本描述。"
+   - Redun 描述: "可有可无，无具体含义。"
+3. **测点KKS码**: "Label: {{测点KKS码}}; 含义: {{KKS码描述}}"。
 
 -步骤-
-1. 识别所有实体。对于每个已识别的实体，提取以下信息：
-   - entity_name：使用上述规则构建的唯一ID (如 "Sys_MBP")。
-   - entity_type：必须属于列表 [{entity_types}] 之一。
-   - entity_description：包含 "Label: [原始代码]" 以及文本中对该代码含义的定义。如果是由子代码推导出的父节点，描述需注明"父级分类"。
-   将每个实体格式化为 ("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}<entity_type>{tuple_delimiter}<entity_description>)
+1. 识别所有实体。将每个实体格式化为 ("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}<entity_type>{tuple_delimiter}<entity_description>)
 
-2. 建立层级关系与定义关系。识别实体配对 (source_entity, target_entity)：
-   - **层级关系**: 必须建立父子连接。
-     - SysGrp_M -> 包含子类 -> SysTyp_MB -> 包含子类 -> Sys_MBP
-     - EqGrp_A -> 包含子类 -> EquipClass_AA
-   - **包含关系**: 如果文本提到某系统包含某设备。
-     - Sys_MBP -> 包含设备 -> EquipClass_AA
-   提取信息：
-   - source_entity：源实体名称
-   - target_entity：目标实体名称
-   - relationship_type：使用中文，如 "包含子类", "包含设备", "包含部件", "属于机组"。
-   - relationship_description：解释关系 (如 "M 是 MB 的父级主组")。
-   - relationship_strength：对于 KKS 定义类关系，固定评分 **10**。
-   将每个关系格式化为 ("relationship"{tuple_delimiter}<source_entity>{tuple_delimiter}<target_entity>{tuple_delimiter}<relationship_type>{tuple_delimiter}<relationship_description>{tuple_delimiter}<relationship_strength>)
+2. 建立关系。识别实体配对 (source, target)：
+   - **层级关系**: 建立父子连接 (如 SysGrp_M -> 包含子类 -> SysTyp_MB)。
+   - **测点全关联 (核心)**: 对于每一个测点KKS码 (Tag)，必须将其拆解并与**所有**组成部分建立关系：
+     - ("Tag_...", "位于机组", "Plant_...")
+     - ("Tag_...", "位于系统", "Sys_...")
+     - ("Tag_...", "位于区域", "Area_...")
+     - ("Tag_...", "属于设备类型", "EquipClass_...")
+     - ("Tag_...", "设备实例为", "EquipSeq_...")
+     - (若有) ("Tag_...", "属于部件类型", "CompClass_...")
+     - (若有) ("Tag_...", "部件实例为", "CompSeq_...")
+     - (若有) ("Tag_...", "具有冗余", "Redun_...")
+   
+   将每个关系格式化为 ("relationship"{tuple_delimiter}<source>{tuple_delimiter}<target>{tuple_delimiter}<type>{tuple_delimiter}<desc>{tuple_delimiter}<strength>)
+   (注意：KKS 定义关系的 strength 固定为 10)
 
 3. 实体和关系的所有属性用中文输出。使用 **{record_delimiter}** 作为列表分隔符。
 4. 完成后，输出 {completion_delimiter}
@@ -58,11 +70,16 @@ system_template_build_graph = """
 -示例-
 ######################
 Example 1:
-Entity_types: [机组代码, 系统主组, 系统子类, 系统代码, 设备主组, 设备代码]
+Entity_types: [机组代码,系统主组,系统子类,系统代码,系统区域序号,设备主组,设备代码,设备序号,冗余码,部件主组,部件代码,部件序号,测点KKS码]
 Text:
 代码 10 定义为 1号机组。
 代码 M 代表主机组。代码 MB 代表燃机。代码 MBA 代表燃机主轴系统。
 代码 A 代表机械设备。代码 AA 代表阀门。
+代码 K 代表机械部件。代码 KC 代表换热器、冷却器。
+KKS码: 10MBA11FT101QA02. 描述: 1号机组燃机温度(含部件)。
+结构拆解: 机组: 10, 系统代码: MBA, 系统区域序号: 11, 设备代码: FT, 设备序号: 101，部件代码：QA，部件序号：02
+KKS码: 10MBA11FT101XQA02 描述: 1号机组燃机温度(含冗余)。
+结构拆解: 机组: 10, 系统代码: MBA, 系统区域序号: 11, 设备代码: FT, 设备序号: 101，冗余码：X，部件代码：QA，部件序号：02
 
 Output:
 ("entity"{tuple_delimiter}"Plant_10"{tuple_delimiter}"机组代码"{tuple_delimiter}"Label: 10; 含义: 1号机组"){record_delimiter}
@@ -71,9 +88,27 @@ Output:
 ("entity"{tuple_delimiter}"Sys_MBA"{tuple_delimiter}"系统代码"{tuple_delimiter}"Label: MBA; 含义: 燃机主轴系统"){record_delimiter}
 ("entity"{tuple_delimiter}"EqGrp_A"{tuple_delimiter}"设备主组"{tuple_delimiter}"Label: A; 含义: 机械设备"){record_delimiter}
 ("entity"{tuple_delimiter}"EquipClass_AA"{tuple_delimiter}"设备代码"{tuple_delimiter}"Label: AA; 含义: 阀门"){record_delimiter}
+("entity"{tuple_delimiter}"CpGrp_K"{tuple_delimiter}"部件主组"{tuple_delimiter}"Label: K; 含义: 机械部件"){record_delimiter}
+("entity"{tuple_delimiter}"CompClass_KC"{tuple_delimiter}"部件代码"{tuple_delimiter}"Label: KC; 含义: 换热器，冷却器"){record_delimiter}
 ("relationship"{tuple_delimiter}"SysGrp_M"{tuple_delimiter}"SysTyp_MB"{tuple_delimiter}"包含子类"{tuple_delimiter}"M 是 MB 的父级主组"{tuple_delimiter}10){record_delimiter}
 ("relationship"{tuple_delimiter}"SysTyp_MB"{tuple_delimiter}"Sys_MBA"{tuple_delimiter}"包含子类"{tuple_delimiter}"MB 是 MBA 的父级子类"{tuple_delimiter}10){record_delimiter}
-("relationship"{tuple_delimiter}"EqGrp_A"{tuple_delimiter}"EquipClass_AA"{tuple_delimiter}"包含子类"{tuple_delimiter}"A 是 AA 的父级设备组"{tuple_delimiter}10){completion_delimiter}
+("relationship"{tuple_delimiter}"EqGrp_A"{tuple_delimiter}"EquipClass_AA"{tuple_delimiter}"包含子类"{tuple_delimiter}"A 是 AA 的父级设备组"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"CpGrp_K"{tuple_delimiter}"CompClass_KC"{tuple_delimiter}"包含子类"{tuple_delimiter}"K 是 KC 的父级部件组"{tuple_delimiter}10){record_delimiter}
+
+("entity"{tuple_delimiter}"Area_11"{tuple_delimiter}"系统区域序号"{tuple_delimiter}"Label: 11; 含义: 标识组件在系统流路中的位置"){record_delimiter}
+("entity"{tuple_delimiter}"EquipSeq_101"{tuple_delimiter}"设备序号"{tuple_delimiter}"Label: 101; 含义: 管道类设备：用于主管道，阀门类设备：独立控制阀与遥控调节阀门，仪表类设备：模拟输出信号测量仪表"){record_delimiter}
+("entity"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"测点KKS码"{tuple_delimiter}"Label: 10MBA11FT101QA02; 含义: 1号机组燃机温度(含部件)，单位为°C"){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"Plant_10"{tuple_delimiter}"位于机组"{tuple_delimiter}"测点位于1号机组"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"Sys_MBA"{tuple_delimiter}"位于系统"{tuple_delimiter}"测点位于燃机主轴系统"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"Area_11"{tuple_delimiter}"位于区域"{tuple_delimiter}"测点位于区域11"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"EquipClass_FT"{tuple_delimiter}"属于设备类型"{tuple_delimiter}"测点设备类型为测量温度类"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"EquipSeq_101"{tuple_delimiter}"设备实例为"{tuple_delimiter}"测点设备序号为101"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"CompClass_QA"{tuple_delimiter}"属于部件类型"{tuple_delimiter}"测点部件类型为外壳部件"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"CompSeq_02"{tuple_delimiter}"设备实例为"{tuple_delimiter}"测点部件序号为02"{tuple_delimiter}10){record_delimiter}
+
+("entity"{tuple_delimiter}"Redun_X"{tuple_delimiter}"冗余码"{tuple_delimiter}"Label: X; 含义: 标识设备的冗余或备用状态"){record_delimiter}
+("entity"{tuple_delimiter}"Tag_10MBA11FT101XQA02"{tuple_delimiter}"测点KKS码"{tuple_delimiter}"Label: 10MBA11FT101XQA02; 含义: 1号机组进气阀(含冗余)，单位为°C"){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11FT101XQA02"{tuple_delimiter}"Redun_X"{tuple_delimiter}"具有冗余"{tuple_delimiter}"测点具有冗余码X"{tuple_delimiter}10){completion_delimiter}
 #############################
 """
 
@@ -93,11 +128,12 @@ human_template_build_graph = """
 
 system_template_build_index = """
 你是一名 KKS 数据处理助理。你的任务是识别列表中的重复实体并合并它们。
-由于 KKS 编码非常严格，请遵循以下原则：
+请严格遵循以下原则：
 
-1. **严格的 ID 区分**: "Sys_MBA" 和 "Sys_MBB" 是完全不同的实体，绝对**不能**合并。
-2. **同名合并**: 只有当 Entity Name (ID) 完全一致，或者仅仅是大小写/空格差异时才合并。
-3. **描述合并**: 如果两个实体 ID 相同（例如都是 "SysGrp_M"），但描述略有不同（一个写"主机组"，一个写"Main Machine Set"），应该合并它们。
+1. **Tag 不合并**: 测点KKS码 (Tag_...) 必须绝对唯一，除非字符串完全一致，否则**绝不合并**。
+2. **ID 严格区分**: "Sys_MBA" 和 "Sys_MBB" 是不同实体。
+3. **数值实体合并**: 对于 Area_XX, EquipSeq_XXX 等数值实体，如果 ID 相同 (如都是 "Area_11")，可以合并，因为它们共享相同的通用定义。
+4. **描述合并**: 如果两个实体 ID 相同，但描述略有差异 (如 "Label: FT; 含义: 温度" vs "Label: FT; 含义: Temperature Measurement")，应该合并。
 
 输出格式：
 1. 将要合并的实体输出为 Python 列表格式。
@@ -115,10 +151,10 @@ Output:
 ['SysGrp_M', 'SysGrp_M']
 #############################
 Example 2:
-['Plant_10', 'Plant_11', 'Plant_10']
+['Tag_10MBA11FT101', 'Tag_10MBA11FT102']
 #############
 Output:
-['Plant_10', 'Plant_10']
+[]
 #############################
 """
 
@@ -138,9 +174,9 @@ community_template = """
 生成该社区所代表的工业系统功能的自然语言摘要。
 
 请重点关注：
-1. 该社区涵盖了哪些主要的系统主组（如 M类主机组，P类辅机等）。
-2. 该社区包含哪些关键的设备类型（如 泵、阀门、变压器）。
-3. 描述这些系统和设备之间的层级或包含关系。
+1. **系统与设备范围**: 该社区涵盖了哪些主要系统 (如 MBA) 和设备类型 (如 AA, FT)。
+2. **测点分布**: 该社区包含哪些具体的测点KKS码 (Tag)，它们主要测量什么参数（如温度、压力）。
+3. **结构特征**: 描述这些测点如何分布在不同的区域 (Area) 或序号 (Serial) 中。
 
 社区信息：
 {community_info}
@@ -149,7 +185,7 @@ community_template = """
 """
 
 COMMUNITY_SUMMARY_PROMPT = """
-给定一组 KKS 实体和关系三元组，生成对该系统功能区域的摘要。不要废话。
+给定一组 KKS 实体和关系三元组，生成对该系统功能区域及测点分布的摘要。不要废话。
 """
 
 entity_alignment_prompt = """
