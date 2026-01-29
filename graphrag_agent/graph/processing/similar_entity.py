@@ -1,7 +1,7 @@
 import time
 from graphdatascience import GraphDataScience
 from typing import Tuple, List, Any, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from graphrag_agent.config.settings import (
     similarity_threshold,
@@ -23,6 +23,8 @@ class GDSConfig:
     batch_size: int = SIMILAR_ENTITY_SETTINGS["batch_size"]
     memory_limit: int = SIMILAR_ENTITY_SETTINGS["memory_limit"]  # 单位：GB
     top_k: int = SIMILAR_ENTITY_SETTINGS["top_k"]
+    #2026.01.29 消歧时忽略相似关键实体（对于编码类实体） 
+    ignore_prefixes: List[str] = field(default_factory=lambda: SIMILAR_ENTITY_SETTINGS.get("ignore_prefixes", []))
     
     def __post_init__(self):
         # 如果配置文件中有设置则使用配置值
@@ -76,6 +78,44 @@ class SimilarEntityDetector:
         
         connection_manager.create_multiple_indexes(index_queries)
     
+    #2026.01.29 消歧时忽略相似关键实体（对于编码类实体） 
+    def remove_restricted_similarities(self):
+        """移除受限类型的相似关系（基于ID前缀）"""
+        if not self.config.ignore_prefixes:
+            # 2026.01.29 Debug: 增加调试信息
+            print("2026.01.29 Debug: ignore_prefixes 配置为空，跳过移除步骤")
+            return
+
+        print(f"正在移除受限实体的相似关系，忽略前缀: {self.config.ignore_prefixes}")
+        # 2026.01.29 Debug: 增加调试信息
+        print(f"2026.01.29 Debug: 正在执行 Cypher 查询以删除 SIMILAR 关系，前缀列表: {self.config.ignore_prefixes}")
+        
+        start_time = time.time()
+        
+        query = """
+        MATCH (a)-[r:SIMILAR]-(b)
+        WHERE any(prefix IN $prefixes WHERE a.id STARTS WITH prefix)
+           OR any(prefix IN $prefixes WHERE b.id STARTS WITH prefix)
+        DELETE r
+        RETURN count(r) as deleted_count
+        """
+        
+        try:
+            result = self.graph.query(query, params={'prefixes': self.config.ignore_prefixes})
+            deleted_count = result[0]['deleted_count'] if result else 0
+            print(f"已移除 {deleted_count} 条受限实体的相似关系，耗时: {time.time() - start_time:.2f}秒")
+            
+            # 2026.01.29 Debug: 增加调试信息
+            if deleted_count > 0:
+                print(f"2026.01.29 Debug: 成功移除了 {deleted_count} 条关系，确保这些实体不会被合并。")
+            else:
+                print("2026.01.29 Debug: 未发现需要移除的关系 (deleted_count=0)。")
+                
+        except Exception as e:
+            print(f"移除受限关系失败: {e}")
+            # 2026.01.29 Debug: 增加调试信息
+            print(f"2026.01.29 Debug: 移除关系时发生异常: {e}")
+
     @timer
     def create_entity_projection(self) -> Tuple[Any, Dict[str, Any]]:
         """
@@ -188,6 +228,11 @@ class SimilarEntityDetector:
             self.knn_time = time.time() - start_time
             print(f"KNN完成，写入 {write_result['relationshipsWritten']} 个关系, 用时: {self.knn_time:.2f}秒")
             
+            # 移除受限实体的相似关系
+            # 2026.01.29 Debug: 增加调试信息
+            print("2026.01.29 Debug: KNN 完成，准备调用 remove_restricted_similarities 进行关系清洗...")
+            self.remove_restricted_similarities()
+            
             return {
                 "status": "success",
                 "relationshipsWritten": write_result['relationshipsWritten'],
@@ -242,6 +287,32 @@ class SimilarEntityDetector:
         start_time = time.time()
         print("开始检测社区...")
         
+        # 2026.01.29 Fix: 在运行 WCC 之前清除旧的 wcc 属性，防止数据残留
+        print("2026.01.29 Debug: 正在清除旧的 wcc 属性...")
+        self.graph.query("MATCH (e:`__Entity__`) REMOVE e.wcc")
+        
+        # 2026.01.29 Fix: 重建投影以同步数据库变更
+        # GDS 投影是快照，不会自动感知到底层数据库中 SIMILAR 关系的删除，必须重建
+        print("2026.01.29 Debug: 正在重建图投影以确保 WCC 使用最新的关系数据...")
+        try:
+            if self.G:
+                self.G.drop()
+            
+            # 创建仅包含 SIMILAR 关系的轻量级投影，用于 WCC
+            self.G, _ = self.gds.graph.project(
+                self.projection_name,
+                "__Entity__",
+                {"SIMILAR": {"orientation": "UNDIRECTED"}}  # WCC通常在无向图上运行效果最好
+            )
+            print("2026.01.29 Debug: 投影重建完成 (仅 SIMILAR 关系)")
+        except Exception as e:
+            print(f"2026.01.29 Debug ERROR: 重建投影失败: {e}")
+            # 2026.01.29 Fix: 返回错误状态而不是直接抛出异常，保持方法签名一致性
+            return {
+                "status": "error",
+                "message": f"重建投影失败: {str(e)}"
+            }
+
         try:
             # 使用WCC算法
             result = self.gds.wcc.write(
@@ -445,5 +516,5 @@ class SimilarEntityDetector:
             return [], {"status": "error", "message": str(e)}
             
         finally:
-            # 确保清理投影图
+            # 2026.01.29 Fix: 确保在流程结束时清理内存投影，防止资源泄露
             self.cleanup()

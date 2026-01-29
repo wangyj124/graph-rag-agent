@@ -26,7 +26,9 @@ system_template_build_graph = """
    - **设备**: 遇到 2位代码 (如 "AA")，必须拆分为：
      a. 主组: Name="EqGrp_{{第1位}}", Type="设备主组"
      b. 代码: Name="EquipClass_{{2位}}", Type="设备代码"
-   - **部件**: 遇到 2位代码 (如 "XQ")，拆分为部件主组(CpGrp_)和部件代码(CompClass_)；1位代码直接提取为部件代码。
+   - **部件**: 遇到 2位代码 (如 "XQ")，必须拆分为：
+     a. 主组: Name="CpGrp_{{第1位}}", Type="部件主组"
+     b. 代码: Name="CompClass_{{2位}}", Type="部件代码"
 
 2. **数值/实例类 (Instances)**:
    - **系统区域序号**: Name="Area_{{数字}}", Type="系统区域序号"
@@ -41,7 +43,34 @@ system_template_build_graph = """
 1. **字典类**: 使用文本中具体的含义 (如 "Label: MBA; 含义: 燃机涡轮机")。
 2. **数值类**: 必须使用**通用定义**：
    - Area 描述: "标识组件在系统流路中的位置，通常沿介质流动方向递增。"
-   - EquipSeq 描述: "标识具体设备的序列号，按文本中实际序列号规则填写，如002在001-100之间，则描述为001-100的文本描述。"
+   - EquipSeq 描述: "标识具体设备的序列号，按文本中实际序列号规则填写，如402在401-409之间，则描述为401-409的文本描述，即管道类设备 (PIPES)：排放管 (Drain Pipes)；阀门类设备 (VALVES)：排放阀 (Drain Valves)；仪表类设备 (INSTRUMENTS)：测试接口（无仪表）(Test Connections (No Instruments))。"，设备序列号的规则如下：
+## 设备序号 (Equipment Serial No.)
+### 管道类设备 (PIPES)
+* 序号 **001-190** 用于 **主管道 (Main Pipes)**。
+* 序号 **191-199** 用于 **安全阀的吸入与泄压管道 (Suction and Pressure Relief on Safety Valves)**。
+* 序号 **201-299** 用于 **未使用 (Not Used)**。
+* 序号 **301-399** 用于 **测量用压力管线 (Pressure Lines for Measurement)**。
+* 序号 **401-499** 用于 **排放管 (Drain Pipes)**。
+* 序号 **501-599** 用于 **排气管 (Vent Pipes)**。
+* 序号 **601-699** 用于 **取样点与计量设备用管道 (Pipes for Extraction Points (For Sample Tests) & For Metering Equipment)**。
+### 阀门类设备 (VALVES)
+* 序号 **001-100** 用于 **主工艺流中的止回阀与截止阀（手动与遥控操作）(Check and Stop Valves (Manual and Remote Operated) in Main Process Stream)**。
+* 序号 **101-190** 用于 **独立控制阀与遥控调节阀门 (Self Contained Control Valves and Remote Operated Modulating Valves)**。
+* 序号 **191-200** 用于 **安全阀与泄压阀 (Safety Valves and Pressure Relief Valves)**。
+* 序号 **301-399** 用于 **测量装置隔离阀 (Isolation Valves for Measuring Devices)**。
+* 序号 **401-499** 用于 **排放阀 (Drain Valves)**。
+* 序号 **501-599** 用于 **排气阀 (Vent Valves)**。
+* 序号 **601-699** 用于 **取样点与计量设备用阀门 (Valves at Extraction Points (For Sample Tests) & for Metering Equipment)**。
+### 仪表类设备 (INSTRUMENTS)
+* 序号 **001-099** 用于 **二进制输出信号测量仪表 (Measuring Instruments with Binary Output Signal)**。
+* 序号 **101-199** 用于 **模拟输出信号测量仪表 (Measuring Instruments with Analog Output Signal)**。
+* 序号 **201-299** 用于 **PCC机架安装模块（不含本特利内华达振动模块）(PCC Rack Mounted Modules (Except Bentley Nevada Vibration Modules))**。
+* 序号 **301-399** 用于 **未分配 (Not Assigned)**。
+* 序号 **401-499** 用于 **测试接口（无仪表）(Test Connections (No Instruments))**。
+* 序号 **501-599** 用于 **本地指示器 (Local Indicators)**。
+* 序号 **601-699** 用于 **未分配 (Not Assigned)**。
+* 序号 **701-899** 用于 **预留 (Reserved)**。
+* 序号 **901-999** 用于 **未分配 (Not Assigned)**。
    - Redun 描述: "可有可无，无具体含义。"
 3. **测点KKS码**: "Label: {{测点KKS码}}; 含义: {{KKS码描述}}"。
 
@@ -49,7 +78,7 @@ system_template_build_graph = """
 1. 识别所有实体。将每个实体格式化为 ("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}<entity_type>{tuple_delimiter}<entity_description>)
 
 2. 建立关系。识别实体配对 (source, target)：
-   - **层级关系**: 建立父子连接 (如 SysGrp_M -> 包含子类 -> SysTyp_MB)。
+   - **层级关系**: 对于系统、设备、部件，该类具有主子类属性的实体，建立父子连接 (如 SysGrp_M -> 包含子类 -> SysTyp_MB)。
    - **测点全关联 (核心)**: 对于每一个测点KKS码 (Tag)，必须将其拆解并与**所有**组成部分建立关系：
      - ("Tag_...", "位于机组", "Plant_...")
      - ("Tag_...", "位于系统", "Sys_...")
@@ -131,7 +160,7 @@ system_template_build_index = """
 请严格遵循以下原则：
 
 1. **Tag 不合并**: 测点KKS码 (Tag_...) 必须绝对唯一，除非字符串完全一致，否则**绝不合并**。
-2. **ID 严格区分**: "Sys_MBA" 和 "Sys_MBB" 是不同实体。
+2. **ID 严格区分**: "Sys_MBA" 和 "Sys_MBB" 是不同实体；ID作为实体合并的唯一判别标准，实体ID不同，不能合并。
 3. **数值实体合并**: 对于 Area_XX, EquipSeq_XXX 等数值实体，如果 ID 相同 (如都是 "Area_11")，可以合并，因为它们共享相同的通用定义。
 4. **描述合并**: 如果两个实体 ID 相同，但描述略有差异 (如 "Label: FT; 含义: 温度" vs "Label: FT; 含义: Temperature Measurement")，应该合并。
 

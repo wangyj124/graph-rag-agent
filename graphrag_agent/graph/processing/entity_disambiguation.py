@@ -9,7 +9,8 @@ from graphrag_agent.config.settings import (
     DISAMBIG_STRING_THRESHOLD,
     DISAMBIG_VECTOR_THRESHOLD, 
     DISAMBIG_NIL_THRESHOLD,
-    DISAMBIG_TOP_K
+    DISAMBIG_TOP_K,
+    SIMILAR_ENTITY_SETTINGS  # 2026.01.29 Debug: 导入配置以获取忽略前缀
 )
 
 class EntityDisambiguator:
@@ -205,10 +206,24 @@ class EntityDisambiguator:
             
             print(f"第 {iteration} 轮：查询返回 {len(groups)} 个待处理分组")
             
+            # 2026.01.29 Debug: 获取忽略前缀配置
+            ignore_prefixes = SIMILAR_ENTITY_SETTINGS.get("ignore_prefixes", [])
+            
             # 处理当前批次的分组
             batch_updated = 0
             for group in groups:
                 entities = group['entity_info']
+                
+                # 2026.01.29 Debug: 打印当前分组实体ID
+                entity_ids = [e['id'] for e in entities]
+                print(f"2026.01.29 Debug: 正在处理 WCC 分组，包含实体: {entity_ids}")
+                
+                # 2026.01.29 Debug: 检查是否有受限实体进入了分组
+                if ignore_prefixes:
+                    restricted_entities = [eid for eid in entity_ids if any(eid.startswith(p) for p in ignore_prefixes)]
+                    if restricted_entities:
+                        print(f"2026.01.29 Debug WARNING: 发现受限实体进入消歧分组！实体: {restricted_entities}")
+                        print(f"2026.01.29 Debug: 这说明 SIMILAR 关系可能未被完全清除，或者 WCC 结果使用了旧数据。")
                 
                 # 选择度数最高的作为canonical（代表性最强）
                 canonical = max(entities, key=lambda x: x['degree'])

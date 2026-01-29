@@ -254,6 +254,12 @@ SIMILAR_ENTITY_SETTINGS = {
     )
     or GDS_MEMORY_LIMIT,
     "top_k": _get_env_int("SIMILAR_ENTITY_TOP_K", 10) or 10,
+    #2026.01.29 消歧时忽略相似关键实体（对于编码类实体） 
+    "ignore_prefixes": [
+        p.strip() 
+        for p in os.getenv("SIMILAR_ENTITY_IGNORE_PREFIXES", "").split(",") 
+        if p.strip()
+    ],
 }
 
 # ===== 搜索工具配置 =====
