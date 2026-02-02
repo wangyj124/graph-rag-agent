@@ -92,7 +92,7 @@ class EntityUpdateData(BaseModel):
 class EntitySearchFilter(BaseModel):
     term: Optional[str] = None
     type: Optional[str] = None
-    limit: Optional[int] = 100
+    limit: Optional[int] = 1000  # 默认显示1000条，后续可视需求调整
 
 class RelationData(BaseModel):
     source: str
@@ -115,7 +115,7 @@ class RelationSearchFilter(BaseModel):
     source: Optional[str] = None
     target: Optional[str] = None
     type: Optional[str] = None
-    limit: Optional[int] = 100
+    limit: Optional[int] = 1000  # 默认显示1000条，后续可视需求调整
 
 class EntityDeleteData(BaseModel):
     id: str

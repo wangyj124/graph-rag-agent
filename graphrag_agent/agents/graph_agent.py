@@ -174,24 +174,28 @@ class GraphAgent(BaseAgent):
         question = messages[-3].content
         docs = messages[-1].content
 
-        # 首先尝试全局缓存
-        global_result = self.global_cache_manager.get(question)
-        if global_result:
-            self._log_execution("generate", 
-                            {"question": question, "docs_length": len(docs)}, 
-                            "全局缓存命中")
-            return {"messages": [AIMessage(content=global_result)]}
-
         # 然后检查会话缓存
         thread_id = state.get("configurable", {}).get("thread_id", "default")
-        cached_result = self.cache_manager.get(question, thread_id=thread_id)
-        if cached_result:
-            self._log_execution("generate", 
-                            {"question": question, "docs_length": len(docs)}, 
-                            "会话缓存命中")
-            # 将命中内容同步到全局缓存
-            self.global_cache_manager.set(question, cached_result)
-            return {"messages": [AIMessage(content=cached_result)]}
+
+        # [调试修改] 暂时禁用缓存读取，排查报错问题
+        # --- [原始代码 - 开始] (请勿删除) ---
+        # # 首先尝试全局缓存
+        # global_result = self.global_cache_manager.get(question)
+        # if global_result:
+        #     self._log_execution("generate", 
+        #                     {"question": question, "docs_length": len(docs)}, 
+        #                     "全局缓存命中")
+        #     return {"messages": [AIMessage(content=global_result)]}
+
+        # cached_result = self.cache_manager.get(question, thread_id=thread_id)
+        # if cached_result:
+        #     self._log_execution("generate", 
+        #                     {"question": question, "docs_length": len(docs)}, 
+        #                     "会话缓存命中")
+        #     # 将命中内容同步到全局缓存
+        #     self.global_cache_manager.set(question, cached_result)
+        #     return {"messages": [AIMessage(content=cached_result)]}
+        # --- [原始代码 - 结束] ---
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", LC_SYSTEM_PROMPT),

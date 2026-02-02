@@ -85,26 +85,29 @@ class HybridAgent(BaseAgent):
         except Exception:
             docs = "无法获取检索结果"
 
-        # 首先尝试全局缓存
-        global_result = self.global_cache_manager.get(question)
-        if global_result:
-            self._log_execution("generate", 
-                            {"question": question, "docs_length": len(docs)}, 
-                            "全局缓存命中")
-            return {"messages": [AIMessage(content=global_result)]}
-
         # 获取当前会话ID，用于上下文感知缓存
         thread_id = state.get("configurable", {}).get("thread_id", "default")
             
-        # 然后检查会话缓存
-        cached_result = self.cache_manager.get(question, thread_id=thread_id)
-        if cached_result:
-            self._log_execution("generate", 
-                            {"question": question, "docs_length": len(docs)}, 
-                            "会话缓存命中")
-            # 将命中内容同步到全局缓存
-            self.global_cache_manager.set(question, cached_result)
-            return {"messages": [AIMessage(content=cached_result)]}
+        # [调试修改] 暂时禁用缓存读取，排查报错问题
+        # --- [原始代码 - 开始] (请勿删除) ---
+        # # 首先尝试全局缓存
+        # global_result = self.global_cache_manager.get(question)
+        # if global_result:
+        #     self._log_execution("generate", 
+        #                     {"question": question, "docs_length": len(docs)}, 
+        #                     "全局缓存命中")
+        #     return {"messages": [AIMessage(content=global_result)]}
+
+        # # 然后检查会话缓存
+        # cached_result = self.cache_manager.get(question, thread_id=thread_id)
+        # if cached_result:
+        #     self._log_execution("generate", 
+        #                     {"question": question, "docs_length": len(docs)}, 
+        #                     "会话缓存命中")
+        #     # 将命中内容同步到全局缓存
+        #     self.global_cache_manager.set(question, cached_result)
+        #     return {"messages": [AIMessage(content=cached_result)]}
+        # --- [原始代码 - 结束] ---
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", LC_SYSTEM_PROMPT),
@@ -221,26 +224,45 @@ class HybridAgent(BaseAgent):
             yield "无法获取查询内容，请重试。"
             return
         
-        # 缓存检查与处理同GraphAgent相同
-        cached_response = self.cache_manager.get(query.strip(), thread_id=thread_id)
-        if cached_response:
-            # 对于缓存的响应，按自然语言单位分块返回
-            chunks = re.split(r'([.!?。！？]\s*)', cached_response)
-            buffer = ""
-            
-            for i in range(0, len(chunks)):
-                buffer += chunks[i]
-                
-                # 当缓冲区包含完整句子或达到合理大小时输出
-                if (i % 2 == 1) or len(buffer) >= self.stream_flush_threshold:
-                    yield buffer
-                    buffer = ""
-                    await asyncio.sleep(0.01)
-            
-            # 输出任何剩余内容
-            if buffer:
-                yield buffer
-            return
+        # [修复] 暂时禁用流式处理中的缓存读取，以解决缓存数据类型不一致导致的报错
+        # 错误详情: expected string or bytes-like object (re.split遇到非字符串缓存数据)
+        # /* ================================================================================
+        # [修改开始]
+        # 操作类型: 修复
+        # 时间: 2026-02-02 10:00
+        # 修改目的: 暂时禁用流式处理中的缓存读取，以解决缓存数据类型不一致导致的"expected string or bytes-like object"错误
+        # ================================================================================
+        # */
+        
+        # --- [原始代码 - 开始] (请勿删除) ---
+        # # 缓存检查与处理同GraphAgent相同
+        # cached_response = self.cache_manager.get(query.strip(), thread_id=thread_id)
+        # if cached_response:
+        #     # 对于缓存的响应，按自然语言单位分块返回
+        #     chunks = re.split(r'([.!?。！？]\s*)', cached_response)
+        #     buffer = ""
+        #     
+        #     for i in range(0, len(chunks)):
+        #         buffer += chunks[i]
+        #         
+        #         # 当缓冲区包含完整句子或达到合理大小时输出
+        #         if (i % 2 == 1) or len(buffer) >= self.stream_flush_threshold:
+        #             yield buffer
+        #             buffer = ""
+        #             await asyncio.sleep(0.01)
+        #     
+        #     # 输出任何剩余内容
+        #     if buffer:
+        #         yield buffer
+        #     return
+        # --- [原始代码 - 结束] ---
+        
+        # --- [新代码 - 开始] ---
+        # 暂时跳过缓存检查
+        pass
+        # --- [新代码 - 结束] ---
+        
+        # /* ================================================================================ [修改结束] ================================================================================ */
         
         # 工作流处理与GraphAgent相同，但添加进度提示
         workflow_state = {"messages": [HumanMessage(content=query)]}
