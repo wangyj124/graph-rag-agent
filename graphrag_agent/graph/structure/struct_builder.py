@@ -57,13 +57,13 @@ class GraphStructureBuilder:
         )
         return doc
         
-    def create_relation_between_chunks(self, file_name: str, chunks: List) -> List[Dict]:
+    def create_relation_between_chunks(self, file_name: str, chunks: List[Dict]) -> List[Dict]:
         """
         创建Chunk节点并建立关系 - 批处理优化版本
         
         Args:
             file_name: 文件名
-            chunks: 文本块列表
+            chunks: 文本块列表 (格式: [{"text": str, "metadata": dict, ...}])
             
         Returns:
             List[Dict]: 带有ID和文档的块列表
@@ -77,14 +77,17 @@ class GraphStructureBuilder:
         offset = 0
         
         # 处理每个chunk
-        for i, chunk in enumerate(chunks):
-            page_content = ''.join(chunk)
+        for i, chunk_dict in enumerate(chunks):
+            page_content = chunk_dict["text"]
+            metadata_from_chunk = chunk_dict.get("metadata", {})
+            tokens = chunk_dict.get("tokens", [])
+            
             current_chunk_id = generate_hash(page_content)
             position = i + 1
             previous_chunk_id = current_chunk_id if i == 0 else lst_chunks_including_hash[-1]['chunk_id']
             
             if i > 0:
-                last_page_content = ''.join(chunks[i-1])
+                last_page_content = chunks[i-1]["text"]
                 offset += len(last_page_content)
                 
             firstChunk = (i == 0)
@@ -94,7 +97,8 @@ class GraphStructureBuilder:
                 "position": position,
                 "length": len(page_content),
                 "content_offset": offset,
-                "tokens": len(chunk)
+                "tokens": len(tokens) if tokens else len(page_content),
+                **metadata_from_chunk  # 合并外部元数据（如标题）
             }
             chunk_document = Document(page_content=page_content, metadata=metadata)
             
@@ -107,7 +111,8 @@ class GraphStructureBuilder:
                 "f_name": file_name,
                 "previous_id": previous_chunk_id,
                 "content_offset": offset,
-                "tokens": len(chunk)
+                "tokens": metadata["tokens"],
+                "headers": str(metadata_from_chunk) if metadata_from_chunk else None # 存储标题层级
             }
             batch_data.append(chunk_data)
             
@@ -180,7 +185,8 @@ class GraphStructureBuilder:
             c.length = data.length, 
             c.fileName = data.f_name,
             c.content_offset = data.content_offset, 
-            c.tokens = data.tokens
+            c.tokens = data.tokens,
+            c.headers = data.headers
         WITH c, data
         MATCH (d:`__Document__` {fileName: data.f_name})
         MERGE (c)-[:PART_OF]->(d)
@@ -247,22 +253,25 @@ class GraphStructureBuilder:
             if start_index > 0 and start_index < len(chunks):
                 # 获取前一个chunk的ID作为起始点
                 prev_chunk = chunks[start_index - 1]
-                prev_content = ''.join(prev_chunk)
+                prev_content = prev_chunk["text"]
                 current_chunk_id = generate_hash(prev_content)
                 # 计算前面所有chunk的offset
                 for j in range(start_index):
-                    offset += len(''.join(chunks[j]))
+                    offset += len(chunks[j]["text"])
             
             # 处理批次内的每个chunk
-            for i, chunk in enumerate(batch):
+            for i, chunk_dict in enumerate(batch):
                 abs_index = start_index + i
-                page_content = ''.join(chunk)
+                page_content = chunk_dict["text"]
+                metadata_from_chunk = chunk_dict.get("metadata", {})
+                tokens = chunk_dict.get("tokens", [])
+                
                 previous_chunk_id = current_chunk_id
                 current_chunk_id = generate_hash(page_content)
                 position = abs_index + 1
                 
                 if i > 0:
-                    last_page_content = ''.join(batch[i-1])
+                    last_page_content = batch[i-1]["text"]
                     offset += len(last_page_content)
                     
                 firstChunk = (abs_index == 0)
@@ -272,7 +281,8 @@ class GraphStructureBuilder:
                     "position": position,
                     "length": len(page_content),
                     "content_offset": offset,
-                    "tokens": len(chunk)
+                    "tokens": len(tokens) if tokens else len(page_content),
+                    **metadata_from_chunk
                 }
                 chunk_document = Document(page_content=page_content, metadata=metadata)
                 
@@ -285,7 +295,8 @@ class GraphStructureBuilder:
                     "f_name": file_name,
                     "previous_id": previous_chunk_id,
                     "content_offset": offset,
-                    "tokens": len(chunk)
+                    "tokens": metadata["tokens"],
+                    "headers": str(metadata_from_chunk) if metadata_from_chunk else None
                 }
                 batch_data.append(chunk_data)
                 
@@ -369,7 +380,8 @@ class GraphStructureBuilder:
                 c.length = data.length, 
                 c.fileName = data.f_name,
                 c.content_offset = data.content_offset, 
-                c.tokens = data.tokens
+                c.tokens = data.tokens,
+                c.headers = data.headers
             WITH data, c
             MATCH (d:`__Document__` {fileName: data.f_name})
             MERGE (c)-[:PART_OF]->(d)

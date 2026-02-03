@@ -40,38 +40,11 @@ system_template_build_graph = """
    - Name="Tag_{{完整字符串}}", Type="测点KKS码"
 
 -描述 (Description) 填写规则-
-1. **字典类**: 使用文本中具体的含义 (如 "Label: MBA; 含义: 燃机涡轮机")。
-2. **数值类**: 必须使用**通用定义**：
+1. **字典类、数值类中的设备序号**: 使用文本中具体的含义 (如 "Label: MBA; 含义: 燃机涡轮机")，如果文本中没有它的描述，应在描述属性上填写'暂无'。
+2. **数值类**: 必须使用**通用定义**（设备序号EquipSeq除外）：
    - Area 描述: "标识组件在系统流路中的位置，通常沿介质流动方向递增。"
-   - EquipSeq 描述: "标识具体设备的序列号，按文本中实际序列号规则填写，如402在401-409之间，则描述为401-409的文本描述，即管道类设备 (PIPES)：排放管 (Drain Pipes)；阀门类设备 (VALVES)：排放阀 (Drain Valves)；仪表类设备 (INSTRUMENTS)：测试接口（无仪表）(Test Connections (No Instruments))。"，设备序列号的规则如下：
-## 设备序号 (Equipment Serial No.)
-### 管道类设备 (PIPES)
-* 序号 **001-190** 用于 **主管道 (Main Pipes)**。
-* 序号 **191-199** 用于 **安全阀的吸入与泄压管道 (Suction and Pressure Relief on Safety Valves)**。
-* 序号 **201-299** 用于 **未使用 (Not Used)**。
-* 序号 **301-399** 用于 **测量用压力管线 (Pressure Lines for Measurement)**。
-* 序号 **401-499** 用于 **排放管 (Drain Pipes)**。
-* 序号 **501-599** 用于 **排气管 (Vent Pipes)**。
-* 序号 **601-699** 用于 **取样点与计量设备用管道 (Pipes for Extraction Points (For Sample Tests) & For Metering Equipment)**。
-### 阀门类设备 (VALVES)
-* 序号 **001-100** 用于 **主工艺流中的止回阀与截止阀（手动与遥控操作）(Check and Stop Valves (Manual and Remote Operated) in Main Process Stream)**。
-* 序号 **101-190** 用于 **独立控制阀与遥控调节阀门 (Self Contained Control Valves and Remote Operated Modulating Valves)**。
-* 序号 **191-200** 用于 **安全阀与泄压阀 (Safety Valves and Pressure Relief Valves)**。
-* 序号 **301-399** 用于 **测量装置隔离阀 (Isolation Valves for Measuring Devices)**。
-* 序号 **401-499** 用于 **排放阀 (Drain Valves)**。
-* 序号 **501-599** 用于 **排气阀 (Vent Valves)**。
-* 序号 **601-699** 用于 **取样点与计量设备用阀门 (Valves at Extraction Points (For Sample Tests) & for Metering Equipment)**。
-### 仪表类设备 (INSTRUMENTS)
-* 序号 **001-099** 用于 **二进制输出信号测量仪表 (Measuring Instruments with Binary Output Signal)**。
-* 序号 **101-199** 用于 **模拟输出信号测量仪表 (Measuring Instruments with Analog Output Signal)**。
-* 序号 **201-299** 用于 **PCC机架安装模块（不含本特利内华达振动模块）(PCC Rack Mounted Modules (Except Bentley Nevada Vibration Modules))**。
-* 序号 **301-399** 用于 **未分配 (Not Assigned)**。
-* 序号 **401-499** 用于 **测试接口（无仪表）(Test Connections (No Instruments))**。
-* 序号 **501-599** 用于 **本地指示器 (Local Indicators)**。
-* 序号 **601-699** 用于 **未分配 (Not Assigned)**。
-* 序号 **701-899** 用于 **预留 (Reserved)**。
-* 序号 **901-999** 用于 **未分配 (Not Assigned)**。
-   - Redun 描述: "可有可无，无具体含义。"
+   - CompSeq 描述: "由两个数字构成，表示具体的部件编号。"
+   - Redun 描述: "一般为单个字母，可有可无。"
 3. **测点KKS码**: "Label: {{测点KKS码}}; 含义: {{KKS码描述}}"。
 
 -步骤-
@@ -104,11 +77,12 @@ Text:
 代码 10 定义为 1号机组。
 代码 M 代表主机组。代码 MB 代表燃机。代码 MBA 代表燃机主轴系统。
 代码 A 代表机械设备。代码 AA 代表阀门。
+代码 101 代表管道类设备 (PIPES)：主管道 (Main Pipes)；阀门类设备 (VALVES)：独立控制阀与遥控调节阀门 (Self Contained Control Valves and Remote Operated Modulating Valves)；仪表类设备 (INSTRUMENTS)：模拟输出信号测量仪表 (Measuring Instruments with Analog Output Signal)。
 代码 K 代表机械部件。代码 KC 代表换热器、冷却器。
-KKS码: 10MBA11FT101QA02. 描述: 1号机组燃机温度(含部件)。
-结构拆解: 机组: 10, 系统代码: MBA, 系统区域序号: 11, 设备代码: FT, 设备序号: 101，部件代码：QA，部件序号：02
-KKS码: 10MBA11FT101XQA02 描述: 1号机组燃机温度(含冗余)。
-结构拆解: 机组: 10, 系统代码: MBA, 系统区域序号: 11, 设备代码: FT, 设备序号: 101，冗余码：X，部件代码：QA，部件序号：02
+KKS码: 10MBA11AA101KC02. 描述: 1号机组燃机阀门(含部件)。
+结构拆解: 机组: 10, 系统代码: MBA, 系统区域序号: 11, 设备代码: AA, 设备序号: 101，部件代码：KC，部件序号：02
+KKS码: 10MBA11AA101XKC02 描述: 1号机组燃机阀门(含冗余)。
+结构拆解: 机组: 10, 系统代码: MBA, 系统区域序号: 11, 设备代码: AA, 设备序号: 101，冗余码：X，部件代码：KC，部件序号：02
 
 Output:
 ("entity"{tuple_delimiter}"Plant_10"{tuple_delimiter}"机组代码"{tuple_delimiter}"Label: 10; 含义: 1号机组"){record_delimiter}
@@ -125,19 +99,19 @@ Output:
 ("relationship"{tuple_delimiter}"CpGrp_K"{tuple_delimiter}"CompClass_KC"{tuple_delimiter}"包含子类"{tuple_delimiter}"K 是 KC 的父级部件组"{tuple_delimiter}10){record_delimiter}
 
 ("entity"{tuple_delimiter}"Area_11"{tuple_delimiter}"系统区域序号"{tuple_delimiter}"Label: 11; 含义: 标识组件在系统流路中的位置"){record_delimiter}
-("entity"{tuple_delimiter}"EquipSeq_101"{tuple_delimiter}"设备序号"{tuple_delimiter}"Label: 101; 含义: 管道类设备：用于主管道，阀门类设备：独立控制阀与遥控调节阀门，仪表类设备：模拟输出信号测量仪表"){record_delimiter}
-("entity"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"测点KKS码"{tuple_delimiter}"Label: 10MBA11FT101QA02; 含义: 1号机组燃机温度(含部件)，单位为°C"){record_delimiter}
-("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"Plant_10"{tuple_delimiter}"位于机组"{tuple_delimiter}"测点位于1号机组"{tuple_delimiter}10){record_delimiter}
-("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"Sys_MBA"{tuple_delimiter}"位于系统"{tuple_delimiter}"测点位于燃机主轴系统"{tuple_delimiter}10){record_delimiter}
-("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"Area_11"{tuple_delimiter}"位于区域"{tuple_delimiter}"测点位于区域11"{tuple_delimiter}10){record_delimiter}
-("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"EquipClass_FT"{tuple_delimiter}"属于设备类型"{tuple_delimiter}"测点设备类型为测量温度类"{tuple_delimiter}10){record_delimiter}
-("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"EquipSeq_101"{tuple_delimiter}"设备实例为"{tuple_delimiter}"测点设备序号为101"{tuple_delimiter}10){record_delimiter}
-("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"CompClass_QA"{tuple_delimiter}"属于部件类型"{tuple_delimiter}"测点部件类型为外壳部件"{tuple_delimiter}10){record_delimiter}
-("relationship"{tuple_delimiter}"Tag_10MBA11FT101QA02"{tuple_delimiter}"CompSeq_02"{tuple_delimiter}"设备实例为"{tuple_delimiter}"测点部件序号为02"{tuple_delimiter}10){record_delimiter}
+("entity"{tuple_delimiter}"EquipSeq_101"{tuple_delimiter}"设备序号"{tuple_delimiter}"Label: 101; 含义: 管道类设备 (PIPES)：主管道 (Main Pipes)；阀门类设备 (VALVES)：独立控制阀与遥控调节阀门 (Self Contained Control Valves and Remote Operated Modulating Valves)；仪表类设备 (INSTRUMENTS)：模拟输出信号测量仪表 (Measuring Instruments with Analog Output Signal)"){record_delimiter}
+("entity"{tuple_delimiter}"Tag_10MBA11AA101KC02"{tuple_delimiter}"测点KKS码"{tuple_delimiter}"Label: 10MBA11AA101KC02; 含义: 1号机组燃机阀门(含部件)"){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11AA101KC02"{tuple_delimiter}"Plant_10"{tuple_delimiter}"位于机组"{tuple_delimiter}"测点位于1号机组"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11AA101KC02"{tuple_delimiter}"Sys_MBA"{tuple_delimiter}"位于系统"{tuple_delimiter}"测点位于燃机主轴系统"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11AA101KC02"{tuple_delimiter}"Area_11"{tuple_delimiter}"位于区域"{tuple_delimiter}"测点位于区域11"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11AA101KC02"{tuple_delimiter}"EquipClass_AA"{tuple_delimiter}"属于设备类型"{tuple_delimiter}"测点设备类型为阀门"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11AA101KC02"{tuple_delimiter}"EquipSeq_101"{tuple_delimiter}"设备实例为"{tuple_delimiter}"测点设备序号为101"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11AA101KC02"{tuple_delimiter}"CompClass_KC"{tuple_delimiter}"属于部件类型"{tuple_delimiter}"测点部件类型为换热器，冷却器"{tuple_delimiter}10){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11AA101KC02"{tuple_delimiter}"CompSeq_02"{tuple_delimiter}"设备实例为"{tuple_delimiter}"测点部件序号为02"{tuple_delimiter}10){record_delimiter}
 
 ("entity"{tuple_delimiter}"Redun_X"{tuple_delimiter}"冗余码"{tuple_delimiter}"Label: X; 含义: 标识设备的冗余或备用状态"){record_delimiter}
-("entity"{tuple_delimiter}"Tag_10MBA11FT101XQA02"{tuple_delimiter}"测点KKS码"{tuple_delimiter}"Label: 10MBA11FT101XQA02; 含义: 1号机组进气阀(含冗余)，单位为°C"){record_delimiter}
-("relationship"{tuple_delimiter}"Tag_10MBA11FT101XQA02"{tuple_delimiter}"Redun_X"{tuple_delimiter}"具有冗余"{tuple_delimiter}"测点具有冗余码X"{tuple_delimiter}10){completion_delimiter}
+("entity"{tuple_delimiter}"Tag_10MBA11AA101XKC02"{tuple_delimiter}"测点KKS码"{tuple_delimiter}"Label: 10MBA11AA101XKC02; 含义: 1号机组燃机阀门(含冗余)"){record_delimiter}
+("relationship"{tuple_delimiter}"Tag_10MBA11AA101XKC02"{tuple_delimiter}"Redun_X"{tuple_delimiter}"具有冗余"{tuple_delimiter}"测点具有冗余码X"{tuple_delimiter}10){completion_delimiter}
 #############################
 """
 

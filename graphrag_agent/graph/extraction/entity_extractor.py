@@ -159,10 +159,10 @@ class EntityRelationExtractor:
         
         # 使用多线程分配策略
         for i, file_content in enumerate(file_contents):
-            chunks = file_content[2]
+            chunks = file_content[2] # 格式: List[Dict]
             
             # 预检查缓存命中率
-            cache_keys = [self._generate_cache_key(''.join(chunk)) for chunk in chunks]
+            cache_keys = [self._generate_cache_key(chunk["text"]) for chunk in chunks]
             cached_results = {key: self._load_from_cache(key) for key in cache_keys}
             non_cached_indices = [idx for idx, key in enumerate(cache_keys) if cached_results[key] is None]
             
@@ -171,7 +171,7 @@ class EntityRelationExtractor:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                     # 创建任务字典
                     future_to_chunk = {
-                        executor.submit(self._process_single_chunk, ''.join(chunks[idx])): idx 
+                        executor.submit(self._process_single_chunk, chunks[idx]["text"]): idx 
                         for idx in non_cached_indices
                     }
                     
@@ -194,7 +194,7 @@ class EntityRelationExtractor:
                             while retry_count < 3:
                                 try:
                                     print(f'尝试重试 Chunk {chunk_idx}, 第 {retry_count+1} 次')
-                                    result = self._process_single_chunk(''.join(chunks[chunk_idx]))
+                                    result = self._process_single_chunk(chunks[chunk_idx]["text"])
                                     cached_results[cache_keys[chunk_idx]] = result
                                     break
                                 except Exception as retry_exc:
@@ -233,7 +233,7 @@ class EntityRelationExtractor:
             results = []
             
             # 智能动态批处理大小
-            chunk_lengths = [len(''.join(chunk)) for chunk in chunks]
+            chunk_lengths = [len(chunk["text"]) for chunk in chunks]
             avg_chunk_size = sum(chunk_lengths) / len(chunk_lengths) if chunk_lengths else 0
             
             # 根据平均chunk大小动态调整批处理大小
@@ -244,7 +244,7 @@ class EntityRelationExtractor:
                 batch_chunks = chunks[i:i+dynamic_batch_size]
                 
                 # 缓存检查
-                batch_keys = [self._generate_cache_key(''.join(chunk)) for chunk in batch_chunks]
+                batch_keys = [self._generate_cache_key(chunk["text"]) for chunk in batch_chunks]
                 cached_batch_results = [self._load_from_cache(key) for key in batch_keys]
                 
                 # 如果所有结果都已缓存，则跳过LLM调用
@@ -258,7 +258,7 @@ class EntityRelationExtractor:
                 # 准备批处理输入
                 batch_inputs = []
                 for chunk in batch_chunks:
-                    batch_inputs.append(''.join(chunk))
+                    batch_inputs.append(chunk["text"])
                 
                 # 使用分隔符合并多个文本块
                 batch_text = f"\n{'-'*50}\n".join(batch_inputs)
@@ -289,7 +289,7 @@ class EntityRelationExtractor:
                             if cached_result is not None:
                                 batch_results.append(cached_result)
                             else:
-                                individual_result = self._process_single_chunk(''.join(chunk))
+                                individual_result = self._process_single_chunk(chunk["text"])
                                 batch_results.append(individual_result)
                     else:
                         # 缓存批处理结果
@@ -302,7 +302,7 @@ class EntityRelationExtractor:
                     print(f"批处理错误，切换到单个处理: {e}")
                     for idx, chunk in enumerate(batch_chunks):
                         try:
-                            individual_result = self._process_single_chunk(''.join(chunk))
+                            individual_result = self._process_single_chunk(chunk["text"])
                             results.append(individual_result)
                         except Exception as e2:
                             print(f"单个chunk处理失败: {e2}")

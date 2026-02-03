@@ -3,6 +3,7 @@ from typing import List, Dict, Optional, Any
 
 from graphrag_agent.pipelines.ingestion.file_reader import FileReader
 from graphrag_agent.pipelines.ingestion.text_chunker import ChineseTextChunker
+from graphrag_agent.pipelines.ingestion.markdown_chunker import MarkdownTextChunker
 from graphrag_agent.config.settings import FILES_DIR, CHUNK_SIZE, OVERLAP
 
 
@@ -22,7 +23,8 @@ class DocumentProcessor:
         """
         self.directory_path = directory_path
         self.file_reader = FileReader(directory_path)
-        self.chunker = ChineseTextChunker(chunk_size, overlap)
+        self.chinese_chunker = ChineseTextChunker(chunk_size, overlap)
+        self.markdown_chunker = MarkdownTextChunker(chunk_size, overlap)
         
     def process_directory(self, file_extensions: Optional[List[str]] = None, recursive: bool = True) -> List[Dict[str, Any]]:
         """
@@ -60,12 +62,27 @@ class DocumentProcessor:
             
             # 对文本内容进行分块
             try:
-                chunks = self.chunker.chunk_text(content)
+                # 根据文件类型选择分块器
+                if file_ext == '.md':
+                    # Markdown 分块返回 List[Dict]
+                    raw_chunks = self.markdown_chunker.chunk_text(content)
+                    chunks = raw_chunks
+                else:
+                    # 其他分块返回 List[List[str]] (tokens)，需转换为统一格式
+                    raw_chunks = self.chinese_chunker.chunk_text(content)
+                    chunks = []
+                    for tokens in raw_chunks:
+                        chunks.append({
+                            "text": "".join(tokens),
+                            "tokens": tokens,
+                            "metadata": {}
+                        })
+                
                 file_result["chunks"] = chunks
                 file_result["chunk_count"] = len(chunks)
                 
                 # 计算每个块的长度
-                chunk_lengths = [len(''.join(chunk)) for chunk in chunks]
+                chunk_lengths = [len(chunk["text"]) for chunk in chunks]
                 file_result["chunk_lengths"] = chunk_lengths
                 file_result["average_chunk_length"] = sum(chunk_lengths) / len(chunk_lengths) if chunk_lengths else 0
                 
