@@ -12,8 +12,9 @@ from graphrag_agent.models.get_models import get_llm_model
 from graphrag_agent.config.prompts import system_template_build_graph, human_template_build_graph
 from graphrag_agent.config.settings import (
     entity_types, relationship_types, CHUNK_SIZE, OVERLAP, MAX_WORKERS, BATCH_SIZE,
-    FILE_REGISTRY_PATH
+    FILE_REGISTRY_PATH, ENTITY_STRICT_MODE
 )
+from graphrag_agent.config.prompts.graph_prompts import entity_description_fusion_prompt
 from graphrag_agent.pipelines.ingestion.document_processor import DocumentProcessor
 from graphrag_agent.graph import EntityRelationExtractor, GraphWriter, GraphStructureBuilder
 from graphrag_agent.config.neo4jdb import get_db_manager
@@ -325,6 +326,10 @@ class IncrementalGraphUpdater:
         if not new_entities:
             return 0
             
+        # 在严格模式下处理描述融合
+        if ENTITY_STRICT_MODE:
+            self._fuse_entities_descriptions(new_entities)
+
         # 合并实体
         query = """
         UNWIND $entities AS entity
@@ -361,6 +366,46 @@ class IncrementalGraphUpdater:
         self.console.print(f"[green]已集成 {entity_count} 个实体[/green]")
         
         return entity_count
+
+    def _fuse_entities_descriptions(self, entities: List[Dict[str, Any]]) -> None:
+        """
+        在增量集成前，对新实体进行描述融合
+        """
+        node_ids = [entity.get("id") for entity in entities if entity.get("id")]
+        if not node_ids:
+            return
+            
+        # 查询现有描述
+        query = """
+        MATCH (n:`__Entity__`)
+        WHERE n.id IN $node_ids
+        RETURN n.id AS id, n.description AS description
+        """
+        try:
+            existing_data = self.graph.query(query, params={"node_ids": node_ids})
+            existing_descriptions = {item['id']: item['description'] for item in existing_data}
+        except Exception as e:
+            print(f"查询现有描述出错: {e}")
+            existing_descriptions = {}
+
+        # 智能融合
+        for entity in entities:
+            node_id = entity.get("id")
+            old_desc = existing_descriptions.get(node_id)
+            new_desc = entity.get("description", "")
+            
+            if old_desc and new_desc and old_desc != new_desc:
+                prompt = entity_description_fusion_prompt.format(
+                    old_description=old_desc,
+                    new_description=new_desc
+                )
+                try:
+                    response = self.llm.invoke(prompt)
+                    fused_desc = response.content if hasattr(response, 'content') else str(response)
+                    entity["description"] = fused_desc.strip()
+                except Exception as e:
+                    if new_desc not in old_desc and new_desc not in ["暂无", "无", "No additional data"]:
+                        entity["description"] = f"{old_desc}; {new_desc}"
     
     def integrate_new_relationships(self, new_relationships: List[Dict[str, Any]]) -> int:
         """

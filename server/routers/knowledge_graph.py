@@ -12,6 +12,7 @@ from services.kg_service import (
     get_entity_cycles,
     get_entity_influence,
     get_simplified_community,
+    sync_community_summaries,
 )
 from server_config.database import get_db_manager
 from models.schemas import (ReasoningRequest, EntityData, EntityDeleteData, EntitySearchFilter, EntityUpdateData,
@@ -564,6 +565,22 @@ def delete_entity(entity_data: EntityDeleteData):
         print(e)
         traceback.print_exc()
         return {"success": False, "message": f"删除实体失败: {str(e)}"}
+
+
+# ==============================================================================
+# [修改开始]
+# 类型: 修改 | 时间: 2026-02-04
+# 目的: 添加同步社区摘要的 API 接口
+# ==============================================================================
+
+@router.post("/knowledge_graph/sync_communities")
+async def sync_communities():
+    """
+    同步社区摘要：手动触发社区检测和摘要重新生成
+    """
+    return sync_community_summaries()
+
+# ============================================================================== [修改结束]
 
 
 @router.post("/relation/create")

@@ -1,9 +1,65 @@
+import os
+import time
 import re
 import traceback
 from typing import Dict, List, Any
 from server_config.database import get_db_manager
 from utils.keywords import extract_smart_keywords
 
+
+# ==============================================================================
+# [修改开始]
+# 类型: 修改 | 时间: 2026-02-04
+# 目的: 添加同步社区摘要的功能，解决底层实体修改后上层社区摘要不一致的问题
+# ==============================================================================
+
+def sync_community_summaries() -> Dict:
+    """
+    同步社区摘要：重新运行社区检测和摘要生成流程，
+    以确保上层社区节点反映底层的实体修改。
+    """
+    try:
+        from graphrag_agent.integrations.build.build_index_and_community import IndexCommunityBuilder
+        from graphrag_agent.config.settings import community_algorithm
+        from graphrag_agent.community import CommunityDetectorFactory, CommunitySummarizerFactory
+        
+        start_time = time.time()
+        
+        # 初始化构建器
+        builder = IndexCommunityBuilder()
+        
+        # 1. 社区检测 (确保社区划分是最新的)
+        print("同步任务：正在执行社区检测...")
+        detector = CommunityDetectorFactory.create(
+            algorithm=community_algorithm,
+            gds=builder.gds,
+            graph=builder.graph
+        )
+        detector.process()
+        
+        # 2. 生成社区摘要 (根据最新的实体属性更新快照)
+        print("同步任务：正在生成社区摘要...")
+        summarizer = CommunitySummarizerFactory.create_summarizer(
+            community_algorithm,
+            builder.graph
+        )
+        summaries = summarizer.process_communities()
+        
+        duration = time.time() - start_time
+        count = len(summaries) if summaries else 0
+        
+        return {
+            "success": True, 
+            "message": f"同步成功！重新生成了 {count} 个社区摘要，耗时 {duration:.2f} 秒。",
+            "duration": duration,
+            "count": count
+        }
+    except Exception as e:
+        print(f"同步社区摘要失败: {str(e)}")
+        traceback.print_exc()
+        return {"success": False, "message": f"同步失败: {str(e)}"}
+
+# ============================================================================== [修改结束]
 
 # 获取数据库连接
 db_manager = get_db_manager()

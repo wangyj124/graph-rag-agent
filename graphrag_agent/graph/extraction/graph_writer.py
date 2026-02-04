@@ -1,12 +1,19 @@
 import re
 import concurrent.futures
-from typing import List, Set
+from typing import List, Set, Dict, Any
 from langchain_community.graphs import Neo4jGraph
 from langchain_core.documents import Document
 from langchain_community.graphs.graph_document import GraphDocument, Node, Relationship
 
 from graphrag_agent.graph.core import connection_manager
-from graphrag_agent.config.settings import BATCH_SIZE as DEFAULT_BATCH_SIZE, MAX_WORKERS as DEFAULT_MAX_WORKERS
+from graphrag_agent.config.settings import (
+    BATCH_SIZE as DEFAULT_BATCH_SIZE, 
+    MAX_WORKERS as DEFAULT_MAX_WORKERS,
+    ENTITY_STRICT_MODE,
+    ENTITY_ID_WHITELIST_REGEX
+)
+from graphrag_agent.config.prompts.graph_prompts import entity_description_fusion_prompt
+from graphrag_agent.models.get_models import get_llm_model
 
 class GraphWriter:
     """
@@ -26,13 +33,35 @@ class GraphWriter:
         self.graph = graph or connection_manager.get_connection()
         self.batch_size = batch_size or DEFAULT_BATCH_SIZE
         self.max_workers = max_workers or DEFAULT_MAX_WORKERS
+        self.llm = get_llm_model()
         
         # 节点缓存，用于减少重复节点的创建
         self.node_cache = {}
         
         # 用于跟踪已经处理的节点，减少重复操作
         self.processed_nodes: Set[str] = set()
+
+    def _is_id_valid(self, node_id: str) -> bool:
+        """
+        根据白名单正则校验 ID 是否合规
+        """
+        if not ENTITY_STRICT_MODE:
+            return True
+            
+        for prefix, pattern in ENTITY_ID_WHITELIST_REGEX.items():
+            if node_id.startswith(prefix + "_") and re.match(pattern, node_id):
+                return True
+        return False
         
+    def _parse_weight(self, weight_str: str) -> float:
+        """解析权重字符串，处理可能的格式问题"""
+        try:
+            # 去除首尾空白和引号
+            clean_weight = str(weight_str).strip().strip('"\'')
+            return float(clean_weight)
+        except (ValueError, TypeError):
+            return 1.0
+
     def convert_to_graph_document(self, chunk_id: str, input_text: str, result: str) -> GraphDocument:
         """
         将提取的实体关系文本转换为GraphDocument对象
@@ -56,6 +85,12 @@ class GraphWriter:
             # 解析节点 - 使用缓存提高效率
             for match in node_pattern.findall(result):
                 node_id, node_type, description = match
+                
+                # 严格模式校验 ID
+                if not self._is_id_valid(node_id):
+                    # print(f"丢弃不合规 ID: {node_id}")
+                    continue
+                    
                 # 检查节点缓存
                 if node_id in self.node_cache:
                     nodes[node_id] = self.node_cache[node_id]
@@ -71,6 +106,12 @@ class GraphWriter:
             # 解析关系
             for match in relationship_pattern.findall(result):
                 source_id, target_id, rel_type, description, weight = match
+                
+                # 严格模式校验 ID：如果源或目标 ID 不合规，丢弃关系
+                if ENTITY_STRICT_MODE:
+                    if not self._is_id_valid(source_id) or not self._is_id_valid(target_id):
+                        continue
+                        
                 # 确保源节点存在，先检查缓存
                 if source_id not in nodes:
                     if source_id in self.node_cache:
@@ -104,7 +145,7 @@ class GraphWriter:
                         type=rel_type,
                         properties={
                             "description": description,
-                            "weight": float(weight)
+                            "weight": self._parse_weight(weight)
                         }
                     )
                 )
@@ -222,6 +263,10 @@ class GraphWriter:
         for i in range(0, len(documents), optimal_batch_size):
             batch = documents[i:i+optimal_batch_size]
             if batch:
+                # 在写入前处理描述融合
+                if ENTITY_STRICT_MODE:
+                    self._fuse_descriptions_in_batch(batch)
+                    
                 try:
                     self.graph.add_graph_documents(
                         batch,
@@ -241,6 +286,63 @@ class GraphWriter:
                             )
                         except Exception as e2:
                             print(f"单个文档写入失败: {e2}")
+
+    def _fuse_descriptions_in_batch(self, batch: List[GraphDocument]) -> None:
+        """
+        在批次写入前，对所有节点进行描述融合判断
+        """
+        # 1. 收集批次中所有唯一的节点
+        unique_nodes: Dict[str, Node] = {}
+        for doc in batch:
+            for node in doc.nodes:
+                if node.id not in unique_nodes:
+                    unique_nodes[node.id] = node
+        
+        if not unique_nodes:
+            return
+            
+        node_ids = list(unique_nodes.keys())
+        
+        # 2. 从数据库中查询现有的描述
+        query = """
+        MATCH (n:`__Entity__`)
+        WHERE n.id IN $node_ids
+        RETURN n.id AS id, n.description AS description
+        """
+        try:
+            existing_data = self.graph.query(query, params={"node_ids": node_ids})
+            existing_descriptions = {item['id']: item['description'] for item in existing_data}
+        except Exception as e:
+            print(f"查询现有描述出错: {e}")
+            existing_descriptions = {}
+
+        # 3. 并行调用 LLM 进行描述融合
+        # 注意：为了避免过多的并发请求，这里可以使用线程池，但数量不宜过多
+        def fuse_single_node(node_id: str, node: Node):
+            old_desc = existing_descriptions.get(node_id)
+            new_desc = node.properties.get('description', '')
+            
+            # 如果数据库里没有，或者新旧描述完全一致，则不需要融合
+            if not old_desc or old_desc == new_desc:
+                return
+                
+            # 调用 LLM 进行智能融合判断
+            prompt = entity_description_fusion_prompt.format(
+                old_description=old_desc,
+                new_description=new_desc
+            )
+            try:
+                response = self.llm.invoke(prompt)
+                fused_desc = response.content if hasattr(response, 'content') else str(response)
+                node.properties['description'] = fused_desc.strip()
+            except Exception as e:
+                # 兜底逻辑：简单的字符串包含检查
+                if new_desc and new_desc not in old_desc and new_desc not in ["暂无", "无", "No additional data"]:
+                    node.properties['description'] = f"{old_desc}; {new_desc}"
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = [executor.submit(fuse_single_node, nid, node) for nid, node in unique_nodes.items()]
+            concurrent.futures.wait(futures)
     
     def merge_chunk_relationships(self, chunk_ids: List[str]) -> None:
         """

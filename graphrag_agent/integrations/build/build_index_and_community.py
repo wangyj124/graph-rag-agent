@@ -18,7 +18,7 @@ from graphrag_agent.community import CommunitySummarizerFactory
 from graphdatascience import GraphDataScience
 
 from graphrag_agent.config.neo4jdb import get_db_manager
-from graphrag_agent.config.settings import MAX_WORKERS, ENTITY_BATCH_SIZE, GDS_MEMORY_LIMIT, NEO4J_CONFIG
+from graphrag_agent.config.settings import MAX_WORKERS, ENTITY_BATCH_SIZE, GDS_MEMORY_LIMIT, NEO4J_CONFIG, ENTITY_STRICT_MODE
 
 import shutup
 shutup.please()
@@ -167,67 +167,73 @@ class IndexCommunityBuilder:
                               f"数据库操作: {db_time:.2f}秒 ({db_time/index_total*100:.1f}%)[/blue]")
             
             # 2. 检测和合并相似实体
-            similar_start = time.time()
-            self.console.print("[cyan]正在检测相似实体...[/cyan]")
-            
-            duplicates = self.entity_detector.process_entities()
-            
-            self.performance_stats["相似实体检测"] = time.time() - similar_start
-            
-            # 显示相似实体检测性能统计
-            projection_time = getattr(self.entity_detector, 'projection_time', 0)
-            knn_time = getattr(self.entity_detector, 'knn_time', 0)
-            wcc_time = getattr(self.entity_detector, 'wcc_time', 0)
-            query_time = getattr(self.entity_detector, 'query_time', 0)
-            similar_total = self.performance_stats["相似实体检测"]
-            
-            self.console.print(f"[blue]相似实体检测完成，找到 {len(duplicates)} 组候选实体，总耗时: {similar_total:.2f}秒[/blue]")
-            self.console.print(f"[blue]其中: 投影创建: {projection_time:.2f}秒 ({projection_time/similar_total*100:.1f}%), "
-                              f"KNN处理: {knn_time:.2f}秒 ({knn_time/similar_total*100:.1f}%), "
-                              f"WCC处理: {wcc_time:.2f}秒 ({wcc_time/similar_total*100:.1f}%), "
-                              f"查询处理: {query_time:.2f}秒 ({query_time/similar_total*100:.1f}%)[/blue]")
-            
-            # 3. 执行实体合并
-            merge_start = time.time()
-            self.console.print("[cyan]正在合并相似实体...[/cyan]")
-            
-            merged_count = self.entity_merger.process_duplicates(duplicates)
-            
-            self.performance_stats["实体合并"] = time.time() - merge_start
-            
-            # 显示实体合并性能统计
-            llm_time = getattr(self.entity_merger, 'llm_time', 0)
-            parse_time = getattr(self.entity_merger, 'parse_time', 0)
-            db_time = getattr(self.entity_merger, 'db_time', 0)
-            merge_total = self.performance_stats["实体合并"]
-            
-            self._display_results_table(
-                "实体合并结果",
-                {
-                    "合并的实体组数": merged_count,
-                    "总耗时": f"{merge_total:.2f}秒",
-                    "LLM处理": f"{llm_time:.2f}秒 ({llm_time/merge_total*100:.1f}%)" if merge_total > 0 else "0.00秒 (0.0%)",
-                    "结果解析": f"{parse_time:.2f}秒 ({parse_time/merge_total*100:.1f}%)" if merge_total > 0 else "0.00秒 (0.0%)",
-                    "数据库操作": f"{db_time:.2f}秒 ({db_time/merge_total*100:.1f}%)" if merge_total > 0 else "0.00秒 (0.0%)"
-                }
-            )
-            
-            # 4. 实体质量提升（消歧和对齐）
-            quality_start = time.time()
-            self.console.print("[cyan]正在进行实体消歧和对齐...[/cyan]")
-            
-            quality_result = self.quality_processor.process()
-            
-            self.performance_stats["实体质量提升"] = time.time() - quality_start
-            
-            self._display_results_table(
-                "实体质量提升结果",
-                {
-                    "消歧的实体": quality_result['disambiguated'],
-                    "对齐的实体": quality_result['aligned'],
-                    "总耗时": f"{self.performance_stats['实体质量提升']:.2f}秒"
-                }
-            )
+            if not ENTITY_STRICT_MODE:
+                similar_start = time.time()
+                self.console.print("[cyan]正在检测相似实体...[/cyan]")
+                
+                duplicates = self.entity_detector.process_entities()
+                
+                self.performance_stats["相似实体检测"] = time.time() - similar_start
+                
+                # 显示相似实体检测性能统计
+                projection_time = getattr(self.entity_detector, 'projection_time', 0)
+                knn_time = getattr(self.entity_detector, 'knn_time', 0)
+                wcc_time = getattr(self.entity_detector, 'wcc_time', 0)
+                query_time = getattr(self.entity_detector, 'query_time', 0)
+                similar_total = self.performance_stats["相似实体检测"]
+                
+                self.console.print(f"[blue]相似实体检测完成，找到 {len(duplicates)} 组候选实体，总耗时: {similar_total:.2f}秒[/blue]")
+                self.console.print(f"[blue]其中: 投影创建: {projection_time:.2f}秒 ({projection_time/similar_total*100:.1f}%), "
+                                  f"KNN处理: {knn_time:.2f}秒 ({knn_time/similar_total*100:.1f}%), "
+                                  f"WCC处理: {wcc_time:.2f}秒 ({wcc_time/similar_total*100:.1f}%), "
+                                  f"查询处理: {query_time:.2f}秒 ({query_time/similar_total*100:.1f}%)[/blue]")
+                
+                # 3. 执行实体合并
+                merge_start = time.time()
+                self.console.print("[cyan]正在合并相似实体...[/cyan]")
+                
+                merged_count = self.entity_merger.process_duplicates(duplicates)
+                
+                self.performance_stats["实体合并"] = time.time() - merge_start
+                
+                # 显示实体合并性能统计
+                llm_time = getattr(self.entity_merger, 'llm_time', 0)
+                parse_time = getattr(self.entity_merger, 'parse_time', 0)
+                db_time = getattr(self.entity_merger, 'db_time', 0)
+                merge_total = self.performance_stats["实体合并"]
+                
+                self._display_results_table(
+                    "实体合并结果",
+                    {
+                        "合并的实体组数": merged_count,
+                        "总耗时": f"{merge_total:.2f}秒",
+                        "LLM处理": f"{llm_time:.2f}秒 ({llm_time/merge_total*100:.1f}%)" if merge_total > 0 else "0.00秒 (0.0%)",
+                        "结果解析": f"{parse_time:.2f}秒 ({parse_time/merge_total*100:.1f}%)" if merge_total > 0 else "0.00秒 (0.0%)",
+                        "数据库操作": f"{db_time:.2f}秒 ({db_time/merge_total*100:.1f}%)" if merge_total > 0 else "0.00秒 (0.0%)"
+                    }
+                )
+                
+                # 4. 实体质量提升（消歧和对齐）
+                quality_start = time.time()
+                self.console.print("[cyan]正在进行实体消歧和对齐...[/cyan]")
+                
+                quality_result = self.quality_processor.process()
+                
+                self.performance_stats["实体质量提升"] = time.time() - quality_start
+                
+                self._display_results_table(
+                    "实体质量提升结果",
+                    {
+                        "消歧的实体": quality_result['disambiguated'],
+                        "对齐的实体": quality_result['aligned'],
+                        "总耗时": f"{self.performance_stats['实体质量提升']:.2f}秒"
+                    }
+                )
+            else:
+                self.console.print("[yellow]严格编码模式已开启，跳过相似性检测、合并与消歧步骤。[/yellow]")
+                self.performance_stats["相似实体检测"] = 0
+                self.performance_stats["实体合并"] = 0
+                self.performance_stats["实体质量提升"] = 0
             
             # 5. 社区检测
             community_start = time.time()

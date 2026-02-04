@@ -115,22 +115,22 @@ response_type = os.getenv("RESPONSE_TYPE", "多个段落")  # 默认回答形式
 # ===== Agent 工具描述 =====
 
 lc_description = (
-    "用于需要具体细节的查询。检索华东理工大学学生管理文件中的具体规定、条款、流程等详细内容。"
-    "适用于'某个具体规定是什么'、'处理流程如何'等问题。"
+    "用于需要具体细节的查询。检索燃机测点KKS码相关的具体编码定义、设备属性、层级关系等详细内容。"
+    "适用于查询特定KKS码含义、查找特定设备对应的KKS码等精准匹配问题。"
 )
 gl_description = (
-    "用于需要总结归纳的查询。分析华东理工大学学生管理体系的整体框架、管理原则、学生权利义务等宏观内容。"
-    "适用于'学校的学生管理总体思路'、'学生权益保护机制'等需要系统性分析的问题。"
+    "用于需要总结归纳的查询。分析燃机测点KKS码的编码体系规则、各系统测点分布概况、设备层级结构等宏观内容。"
+    "适用于了解编码规范、统计某系统测点数量或分析系统间关系等宏观问题。"
 )
 naive_description = (
-    "基础检索工具，直接查找与问题最相关的文本片段，不做复杂分析。快速获取华东理工大学相关政策，返回最匹配的原文段落。"
+    "基础检索工具，直接查找与问题最相关的文档片段。快速检索KKS编码手册、设计文档或技术说明书，返回最匹配的原文段落，不做深度推理。"
 )
 
 examples = [
-    "旷课多少学时会被退学？",
-    "国家奖学金和国家励志奖学金互斥吗？",
-    "优秀学生要怎么申请？",
-    "那上海市奖学金呢？",
+    "燃机进气温度的KKS码是什么？",
+    "KKS码10MBA11CT901ZQ02代表什么含义？",
+    "MBA系统的所有测点列表。",
+    "KKS编码中系统代码MBA指代什么？",
 ]  # 前端示例问题
 
 # ===== 性能优化配置 =====
@@ -151,6 +151,26 @@ GDS_NODE_COUNT_LIMIT = _get_env_int("GDS_NODE_COUNT_LIMIT", 50000) or 50000  # �
 GDS_TIMEOUT_SECONDS = _get_env_int("GDS_TIMEOUT_SECONDS", 300) or 300  # 超时时长
 
 # ===== 实体消歧与对齐配置 =====
+
+# 编码类实体严格模式开关
+ENTITY_STRICT_MODE = _get_env_bool("ENTITY_STRICT_MODE", True)
+
+# 编码类实体 ID 白名单正则表达式
+ENTITY_ID_WHITELIST_REGEX = {
+    "Plant": r"^Plant_\d{2}$",
+    "SysGrp": r"^SysGrp_[A-Z]$",
+    "SysTyp": r"^SysTyp_[A-Z]{2}$",
+    "Sys": r"^Sys_[A-Z]{3}$",
+    "EqGrp": r"^EqGrp_[A-Z]$",
+    "EquipClass": r"^EquipClass_[A-Z]{2}$",
+    "CpGrp": r"^CpGrp_[A-Z]$",
+    "CompClass": r"^CompClass_[A-Z]{2}$",
+    "Area": r"^Area_\d{2}$",
+    "EquipSeq": r"^EquipSeq_\d{3}$",
+    "Redun": r"^Redun_[A-Z]$",
+    "CompSeq": r"^CompSeq_\d{2}$",
+    "Tag": r"^Tag_[A-Z0-9]{16,17}$"
+}
 
 DISAMBIG_STRING_THRESHOLD = _get_env_float("DISAMBIG_STRING_THRESHOLD", 0.7) or 0.7
 DISAMBIG_VECTOR_THRESHOLD = _get_env_float("DISAMBIG_VECTOR_THRESHOLD", 0.85) or 0.85

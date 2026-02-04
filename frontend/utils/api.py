@@ -564,6 +564,30 @@ def clear_chat():
         st.session_state.processing_lock = False
         st.error(f"清除对话时发生错误: {str(e)}")
 
+# ==============================================================================
+# [修改开始]
+# 类型: 修改 | 时间: 2026-02-04
+# 目的: 添加同步社区摘要的 API 调用函数
+# ==============================================================================
+
+def sync_communities() -> Dict:
+    """
+    手动触发知识图谱社区摘要同步
+    """
+    try:
+        response = requests.post(
+            f"{API_URL}/knowledge_graph/sync_communities",
+            timeout=300  # 摘要生成可能非常耗时
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"success": False, "message": f"同步失败: HTTP {response.status_code}"}
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "message": f"请求失败: {str(e)}"}
+
+# ============================================================================== [修改结束]
+
 def clear_cache(cache_type=None):
     """清除指定类型或所有缓存"""
     if cache_type and cache_type in st.session_state.cache:
